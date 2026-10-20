@@ -14,12 +14,14 @@
 
 use serde_json::Value;
 
-/// 默认更新仓库：本仓库发布到自己的 GitHub Release（Node 版 DEFAULT_REPO）
+/// 默认更新仓库（Node 版 DEFAULT_REPO）
 ///
-/// 2026-10-17 接手后从 `weiang12345/agent2api` 改指本仓库：更新检查读的是
-/// 这个常量的 Release 列表，留着上游 fork 的地址会让「检查更新」指向别人的
-/// 发布线。见根目录 TAKEOVER.md。
-pub const DEFAULT_REPO: &str = "haremank/agent2api";
+/// 原上游 `aimod-cc/agent2api` 的作者账号已封禁，其 Release 线随仓库一起 404。
+/// 本仓库是**临时维护**、不发布新版本，因此指回仍挂着安装包的 fork 发布线
+/// `weiang12345/agent2api`——本仓库的源码与全部历史正来自它，不引入新的信任边界。
+/// 等原作者账号恢复（届时本仓库合并或清除）再改回上游。
+/// 需要自建源时用 `WORKBUDDY_UPDATE_REPO` 覆盖，见根目录 TAKEOVER.md。
+pub const DEFAULT_REPO: &str = "weiang12345/agent2api";
 
 /// GitHub API 根（Node 版 GITHUB_API）—— [`api_base`] 的默认值
 pub const GITHUB_API: &str = "https://api.github.com";

@@ -7,14 +7,21 @@
 [简体中文](../README.md) | **English** | [繁體中文](./README.zh-Hant.md) | [日本語](./README.ja.md) | [한국어](./README.ko.md) | [Português (BR)](./README.pt-BR.md)
 
 [![license](https://img.shields.io/badge/license-MIT%20%2B%20Notice-green)](../LICENSE)
-[![release](https://img.shields.io/github/v/release/aimod-cc/agent2api?include_prereleases)](https://github.com/aimod-cc/agent2api/releases/latest)
+[![release](https://img.shields.io/github/v/release/weiang12345/agent2api?include_prereleases)](https://github.com/weiang12345/agent2api/releases/latest)
 [![docker pulls](https://img.shields.io/docker/pulls/aimodcc/agent2api)](https://hub.docker.com/r/aimodcc/agent2api)
-[![stars](https://img.shields.io/github/stars/aimod-cc/agent2api?style=flat&color=yellow)](https://github.com/aimod-cc/agent2api/stargazers)
-[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/aimod-cc/agent2api/releases/latest)
+[![stars](https://img.shields.io/github/stars/haremank/agent2api?style=flat&color=yellow)](https://github.com/haremank/agent2api/stargazers)
+[![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/weiang12345/agent2api/releases/latest)
 
 [✨ Key Features](#-key-features) • [💬 Community & Support](#-community--support) • [🤝 Supported Providers](#-supported-providers) • [🚀 Quick Start](#-quick-start) • [🐳 Docker Deployment](#-docker-deployment) • [📸 Screenshots](#-screenshots) • [🔧 Development & Build](#-development--build) • [📜 Usage Notice](#-usage-notice)
 
 </div>
+
+> [!IMPORTANT]
+> **Temporary maintenance repository** — The original author's account for `aimod-cc/agent2api` has been banned, and the upstream repository and its releases are no longer reachable (GitHub returns 404). This repository was rebuilt locally from the full commit history of the fork maintainer [`weiang12345/agent2api`](https://github.com/weiang12345/agent2api), and is **maintained on a temporary basis only**.
+>
+> The application UI and all business logic are **unchanged**. The only code change is the update-source constant (`DEFAULT_REPO`), pointed back at the fork release line that still hosts installers; broken documentation links caused by the upstream account loss were also repaired.
+>
+> Once the original author's account is restored, this repository will be merged back upstream or removed. Until then, please do not treat it as a long-term maintained project.
 
 ---
 
@@ -87,7 +94,7 @@ Reverse-proxy capabilities at a glance (✓ supported · ✗ not supported · �
 
 ## 🚀 Quick Start
 
-Download the installer from [Releases](https://github.com/aimod-cc/agent2api/releases/latest) (NSIS, Simplified Chinese, installs to `C:\Program Files\Agent2API` by default, and needs administrator approval during setup), then launch it — **no Node or any other runtime required**.
+Download the installer from [Releases](https://github.com/weiang12345/agent2api/releases/latest) (NSIS, Simplified Chinese, installs to `C:\Program Files\Agent2API` by default, and needs administrator approval during setup), then launch it — **no Node or any other runtime required**.
 
 1. First launch starts the local gateway (port 3065) inside the app process and opens the main window. If an older version's data directory or data files are found, a dialog walks you through the migration.
 2. Click "Add account" on the Accounts page, pick a provider and follow the dialog: sign in or fill in credentials (web login / SMS code / pasted credentials / importing this machine's desktop login state).
@@ -161,7 +168,7 @@ Environment variables (all optional):
 | `AGENT2API_ALLOW_NO_KEY` | Set to `1` to serve `/v1` without any key — private networks only |
 | `AGENT2API_CAPTCHA_ENABLED` | Login-page human verification widget: `1` enabled (default), `0` disabled |
 | `AGENT2API_SELF_UPDATE` | In-container update entry: `1` enabled by default (the panel offers "Download and update"); set `0` to upgrade manually only |
-| `WORKBUDDY_UPDATE_REPO` + `WORKBUDDY_UPDATE_API_BASE` | Advanced: point update checks/downloads at your own source. The first swaps the repository (defaults to the upstream `aimod-cc/agent2api`; forks should override it), the second swaps the API root (default `https://api.github.com`, must return a GitHub-shaped release JSON). With a custom source set, the download allowlist additionally admits only **that source's own host** (scheme follows the source: an `http://` source also allows plaintext downloads — for local drills / internal mirrors only) |
+| `WORKBUDDY_UPDATE_REPO` + `WORKBUDDY_UPDATE_API_BASE` | Advanced: point update checks/downloads at your own source. The first swaps the repository (defaults to the upstream `weiang12345/agent2api`; forks should override it), the second swaps the API root (default `https://api.github.com`, must return a GitHub-shaped release JSON). With a custom source set, the download allowlist additionally admits only **that source's own host** (scheme follows the source: an `http://` source also allows plaintext downloads — for local drills / internal mirrors only) |
 
 Build from source: clone the repo and run `docker compose up -d --build` (the image contains only the gateway and the panel, no Rust toolchain).
 
@@ -244,17 +251,17 @@ One caveat: the LICENSE file carries a **Usage Notice** after the MIT text, whos
 
 ## ⭐ Star History
 
-<a href="https://star-history.com/#aimod-cc/agent2api&Date">
+<a href="https://star-history.com/#haremank/agent2api&Date">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=aimod-cc/agent2api&type=Date&theme=dark" />
-    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=aimod-cc/agent2api&type=Date" />
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=aimod-cc/agent2api&type=Date" />
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=haremank/agent2api&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=haremank/agent2api&type=Date" />
+    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=haremank/agent2api&type=Date" />
   </picture>
 </a>
 
 <div align="center">
 
-**[Download the latest release](https://github.com/aimod-cc/agent2api/releases/latest)** • **[Report an issue](https://github.com/aimod-cc/agent2api/issues)**
+**[Download the latest release](https://github.com/weiang12345/agent2api/releases/latest)** • **[Report an issue](https://github.com/haremank/agent2api/issues)**
 
 If this project helps you, a ⭐️ Star is appreciated!
 
