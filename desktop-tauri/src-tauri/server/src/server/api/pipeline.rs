@@ -474,11 +474,19 @@ pub fn record_early_failure(
     model: &str,
     client_reasoning: &str,
     client: &str,
+    key_id: &str,
+    key_name: &str,
     error: &GatewayError,
 ) {
+    let telemetry = Arc::new(RequestTelemetry::new());
+    // 早失败同样是某把 Key 发起的（请求体非法、缺 messages 等）：身份要记下来，
+    // 否则 Key 页的请求数会偏低。与正常路径同一处旁路（见 `set_key`）。
+    if !key_id.is_empty() {
+        telemetry.set_key(key_id, key_name);
+    }
     let context = RecordContext {
         stats: state.request_stats(),
-        telemetry: Arc::new(RequestTelemetry::new()),
+        telemetry,
         started_at,
         client_model: model.to_string(),
         client_reasoning: client_reasoning.to_string(),
@@ -654,6 +662,10 @@ pub fn record_entry(context: &RecordContext, fallback_error: Option<String>) {
     // 来源客户端：入口解析请求头判好的类型（`core::client::classify`），
     // 存储层只搬运不重判 —— UA 规则只有一份
     entry.client = context.client.clone();
+    // Key 身份（schema v16）：入口在鉴权命中时挂进 telemetry 旁路，这里只搬运。
+    // 空串 = 免鉴权 / 环境变量 Key / 助手 / 模型测试（见 `RequestEntry::key_id`）
+    entry.key_id = snapshot.key_id;
+    entry.key_name = snapshot.key_name;
     entry.error = error;
     entry.prompt_tokens = snapshot.prompt_tokens;
     entry.completion_tokens = snapshot.completion_tokens;

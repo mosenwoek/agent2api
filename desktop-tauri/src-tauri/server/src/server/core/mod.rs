@@ -81,6 +81,7 @@ pub mod degrade;
 pub mod egress;
 pub mod endpoints;
 pub mod import_ccswitch;
+pub mod key_quota;
 pub mod key_scope;
 pub mod legacy_api_key;
 pub mod limiter;

@@ -226,6 +226,24 @@ impl LogPhase {
 /// 记账点要的最终快照（一次性读走，避免读字段时逐次加锁）
 #[derive(Clone, Debug, Default)]
 pub struct TelemetrySnapshot {
+    /// **本次请求命中的网关 Key id**（schema v16；空串 = 没有可归属的 Key）。
+    ///
+    /// 为什么挂在 telemetry 而不是逐层传参：`RecordContext` 有近二十处字面量
+    /// 构造（三个协议入口 × 成功/失败/流式各一支），给它加字段等于二十次机械
+    /// 修改、且每处都要从 `scope` 取值。telemetry 本来就是这个项目的「跨层
+    /// 请求级侧信道」——`route` / `cancel` / `capture` 都挂在这里，正是为了
+    /// 不层层传参；Key 身份与它们同一性质（入口知道、记账点要读）。
+    ///
+    /// 空串的四种成因都收敛成同一个值：免鉴权模式（一把启用的 Key 都没有）、
+    /// 环境变量 Key（`WORKBUDDY_PROXY_API_KEY`，没有列表记录可挂身份）、
+    /// 面板内部发起的 AI 助手、模型测试。与 `provider` / `account_id` 的
+    /// 既有空串口径一致。
+    pub key_id: String,
+    /// 命中 Key 的展示名快照（与 `key_id` 同源、同一时刻定稿）。
+    ///
+    /// 存快照而不是读时现查配置：Key 可以改名、可以被删除，而明细的寿命长于
+    /// 配置 —— 与 `account_name` 完全同一条理由。
+    pub key_name: String,
     /// 实际尝试的**账号数**（0 = 还没走到选路就失败了）。
     ///
     /// 口径说明：一次「尝试」= 选路循环的一轮 = 向一个账号发一次上游请求
@@ -658,6 +676,22 @@ impl RequestTelemetry {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         *guard = Some(decision);
+    }
+
+    /// 挂本次请求命中的网关 Key 身份（schema v16）。
+    ///
+    /// 只在入口 handler 里调一次（拿到 `Option<KeyScope>` 之后）：`None` 时
+    /// 不调，槽位保持默认的空串 —— 那正是「没有可归属的 Key」的表示。
+    ///
+    /// 与 `set_route_decision` 共用 `inner` 那把锁：两者都只写一次、都在请求
+    /// 开始阶段，不构成竞争。
+    pub fn set_key(&self, key_id: &str, key_name: &str) {
+        let mut guard = self
+            .inner
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        guard.key_id = key_id.to_string();
+        guard.key_name = key_name.to_string();
     }
 
     /// 取选路决策快照（记账点在请求收尾时取走落库；没走到选路时为 None）。

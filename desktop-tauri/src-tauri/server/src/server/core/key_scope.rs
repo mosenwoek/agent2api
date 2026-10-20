@@ -48,6 +48,18 @@ use crate::server::core::api_keys::ApiKeyEntry;
 /// （模型名、provider id 的比对历来忽略大小写，见 `model_rules` 模块头）。
 #[derive(Clone, Debug, Default)]
 pub struct KeyScope {
+    /// 命中记录的 id（**身份**，不是限制）。
+    ///
+    /// 它随请求带到记账点，落进 `requests.key_id` —— Key 页的用量列与 Key 级
+    /// 配额都靠这一列。与两个白名单不同，它**不参与任何判定**：命中记录却拿不到
+    /// id 是不可能的（`from_entry` 一定有值），所以这里不需要「空 = 不限制」
+    /// 那种语义，空串只出现在 `provider_only` 构造的测试作用域上。
+    key_id: String,
+    /// 命中记录的展示名快照（落进 `requests.key_name`）。
+    ///
+    /// 与 `account_name` 同一理由：Key 可以改名、可以被删除，但明细的寿命长于
+    /// 配置，报表仍要显示一个可读的名字而不是一串 id。
+    key_name: String,
     /// 允许的 provider id（小写），空集合 = 不限制
     allowed_providers: HashSet<String>,
     /// 允许的对外模型名（小写），空集合 = 不限制
@@ -58,9 +70,21 @@ impl KeyScope {
     /// 由一条 Key 记录构造（`allowed*` 为空 = 该维度不限制）
     pub fn from_entry(entry: &ApiKeyEntry) -> Self {
         Self {
+            key_id: entry.id.clone(),
+            key_name: entry.name.clone(),
             allowed_providers: normalize(&entry.allowed_providers),
             allowed_models: normalize(&entry.allowed_models),
         }
+    }
+
+    /// 命中记录的 id（空串 = 没有可归属的 Key）
+    pub fn key_id(&self) -> &str {
+        &self.key_id
+    }
+
+    /// 命中记录的展示名快照
+    pub fn key_name(&self) -> &str {
+        &self.key_name
     }
 
     /// **只有这一家**（模型测试专用：测试要打在**这一行所属的家**上，
@@ -76,6 +100,10 @@ impl KeyScope {
             allowed_providers.insert(id);
         }
         Self {
+            // 模型测试没有网关 Key 身份：它由面板内部发起，落库时 key_id 为空串
+            // （报表按 `is_test` 排除，不会污染 Key 用量）
+            key_id: String::new(),
+            key_name: String::new(),
             allowed_providers,
             allowed_models: HashSet::new(),
         }

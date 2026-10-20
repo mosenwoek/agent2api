@@ -321,6 +321,19 @@ pub struct RequestEntry {
     /// 与 `phase` 同一位置纪律：新加的列排在结构体末尾。
     #[serde(default)]
     pub client: String,
+    /// **本次请求命中的网关 Key id**（schema v16；空串 = 没有可归属的 Key）。
+    ///
+    /// 四种成因都收敛成空串：免鉴权模式、环境变量 Key、面板内部的 AI 助手、
+    /// 模型测试。与 `provider` / `account_id` 的既有空串口径一致 ——
+    /// 消费点不必分四路判断。
+    ///
+    /// 存储契约与 `account_id` 同构：身份只认 id（Key 改名不该拆成两行），
+    /// 展示名另存 `key_name` 快照（Key 删除后明细仍要可读）。
+    #[serde(rename = "keyId", default)]
+    pub key_id: String,
+    /// 命中 Key 的展示名快照（与 `key_id` 同源同刻；空串 = 同上）
+    #[serde(rename = "keyName", default)]
+    pub key_name: String,
 }
 
 /// 一个被命中的敏感词及其次数（存储契约）。
@@ -490,6 +503,11 @@ pub struct NewRequestEntry {
     /// 不采集的路径为空串）。模型测试没有下游 UA，保持空串 —— 「谁发起的」
     /// 那件事已经由 `is_test` 表达，这里不编一个 `test` 值出来。
     pub client: String,
+    /// 命中的网关 Key 身份（schema v16；空串 = 没有可归属的 Key）。
+    /// 来源是 telemetry 旁路的 `set_key`（见 `RecordContext` 的说明）。
+    pub key_id: String,
+    /// 命中 Key 的展示名快照（与 `key_id` 同源同刻）
+    pub key_name: String,
 }
 
 impl NewRequestEntry {
@@ -529,6 +547,10 @@ impl NewRequestEntry {
             // 客户端同样「有采集才有值」：入口取到 UA 才填（见 `RequestEntry::client`），
             // 拿不到 UA 的路径保持空串，前端显示占位符
             client: String::new(),
+            // Key 身份同样「有采集才有值」：命中网关 Key 才有（见
+            // `RequestEntry::key_id` 的四种空串成因）
+            key_id: String::new(),
+            key_name: String::new(),
         }
     }
 
@@ -645,6 +667,10 @@ impl NewRequestEntry {
             // `core::client::classify`，存储层不再重新归类 —— 存储层不认识
             // UA 规则，两处各判一遍迟早会漂
             client: self.client.trim().to_string(),
+            // Key 身份同理原样透传：入口已经按「命中的那把」定好，存储层不做
+            // 任何推导（不认识配置，也不该在这里回查）
+            key_id: self.key_id.trim().to_string(),
+            key_name: self.key_name.trim().to_string(),
         }
     }
 }

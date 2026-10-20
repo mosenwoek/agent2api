@@ -310,7 +310,28 @@ pub fn is_reserved(key: &str) -> bool {
 /// 在百毫秒量级，不会让启动明显变慢。**不要把这两条往 [`V1_SCHEMA`] 里补**：
 /// 新库按 1→15 依次跑，v15 那一步同样会建出来，而 v1 里多写一份等于同一条索引
 /// 有了两处定义 —— 将来改一处忘一处，正是 `V4_SCHEMA` 那类错位的来源。
-pub const SCHEMA_VERSION: i64 = 15;
+///
+/// ── 版本 16：requests 补网关 Key 身份（`key_id` / `key_name`）─────
+/// 见 [`V16_SCHEMA`]。明细记下「这次请求是哪把网关 Key 发的」，供 Key 页的
+/// 用量列与 Key 级配额判定读。
+///
+/// 为什么是 id + name 两列而不是只存 id：与 `account_id` / `account_name`
+/// 完全同构 —— Key 可以改名，身份只认 id（改名不该把它拆成两行），但 Key
+/// 被删除后明细的寿命长于配置，报表仍要显示一个可读的名字而不是一串 id。
+///
+/// 为什么空串表示「没有 Key」：免鉴权模式、环境变量 Key（
+/// `WORKBUDDY_PROXY_API_KEY`，没有列表记录）、面板内部发起的 AI 助手与模型
+/// 测试，这四种情形都没有可归属的 Key。收敛成同一个值之后，消费点不必分四路
+/// 判断 —— 与 `provider` / `account_id` 的既有空串口径一致。
+///
+/// 为什么索引是 `(key_id, ts)` 而不是只 `key_id`：配额判定要
+/// `WHERE key_id = ? AND ts >= ?`，Key 用量要
+/// `GROUP BY key_id WHERE ts >= ?` —— 列序让两者都走范围扫描，只建 `key_id`
+/// 的话区间条件退化成过滤。与 v9 给 `account_id` 建索引同一理由。
+///
+/// **历史数据不回填**：v16 之前的明细根本没记过 Key 身份，无从推断 ——
+/// 按「不猜值」的既有纪律，旧行一律落在空串（未知 Key）组。
+pub const SCHEMA_VERSION: i64 = 16;
 
 /// 版本 1 的全部表与索引：改造前所有 JSON / JSONL 文件的对应形态。
 ///
@@ -814,6 +835,18 @@ CREATE INDEX IF NOT EXISTS idx_requests_summary ON requests(
 );
 ";
 
+/// 版本 16：requests 补网关 Key 身份两列 + 索引（schema v16）。
+///
+/// 与 v12 同一形态（既有表加列，幂等靠版本号）；索引那条与 v15 同形态
+/// （`CREATE INDEX IF NOT EXISTS`）。来历与取舍见 [`SCHEMA_VERSION`] 的 v16 段。
+const V16_SCHEMA: &str = "
+-- ── requests 补网关 Key 身份（schema v16）─────────────────────
+ALTER TABLE requests ADD COLUMN key_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE requests ADD COLUMN key_name TEXT NOT NULL DEFAULT '';
+-- ── Key 维度的区间扫描索引（配额判定 + 用量查询）───────────────
+CREATE INDEX IF NOT EXISTS idx_requests_key_ts ON requests(key_id, ts);
+";
+
 /// 把库升到 [`SCHEMA_VERSION`]（幂等：已是最新版时什么都不做）。
 ///
 /// **库版本高于本程序时返回 `Err` 拒绝打开**（v14 起有意反转的一条既有决定，
@@ -971,6 +1004,9 @@ fn apply_version(
         // v15：requests 补两条索引（status 的定位 + 报表窄列的覆盖，见
         // V15_SCHEMA 与 SCHEMA_VERSION 的 v15 段）。
         15 => conn.execute_batch(V15_SCHEMA),
+        // v16：requests 补网关 Key 身份两列 + 区间索引（见 V16_SCHEMA 与
+        // SCHEMA_VERSION 的 v16 段）。
+        16 => conn.execute_batch(V16_SCHEMA),
         _ => Ok(()),
     }
 }
