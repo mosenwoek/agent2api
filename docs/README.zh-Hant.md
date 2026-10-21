@@ -33,7 +33,7 @@
 > 改動說明見 [FORK-NOTES.md](../FORK-NOTES.md)。上游同步來源為
 > [`superdady666/agent2api`](https://github.com/superdady666/agent2api)。
 >
-> 上面 README 裡的 Docker 鏡像名（`aimodcc/agent2api`）指向上游官方鏡像；自建鏡像請用 `mosenwoek/agent2api`
+> 上面 README 裡的 Docker 鏡像名（`aimodcc/agent2api`）指向上游官方鏡像；自建鏡像請用 `nbmosen/agent2api`
 > （本倉庫的 `.github/workflows/docker.yml` 在 main 分支推送時建置推送）。
 
 ---

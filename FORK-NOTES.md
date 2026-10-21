@@ -60,12 +60,12 @@
 
 `.github/workflows/docker.yml`：
 
-- `IMAGE` 从 `aimodcc/agent2api` 改为 `mosenwoek/agent2api`
+- `IMAGE` 从 `aimodcc/agent2api` 改为 `nbmosen/agent2api`
 - 新增 `push` 触发：推 `main` 分支也构建并推 `:latest` + `:dev`
   （个人 fork 的 main 就是「当前在用的那一份」，VPS 拉 `:latest` 就能拿到改动）
 - `:latest` 的移动规则：main 分支或正式版 tag（不含 `-`）；beta tag 不动 `:latest`
 
-`docker-compose.yml` 的镜像名改为 `mosenwoek/agent2api`（这是**自用**配置，
+`docker-compose.yml` 的镜像名改为 `nbmosen/agent2api`（这是**自用**配置，
 要换成带 IP/UA 改动的镜像）。**README 各语言版保持上游的 `aimodcc/agent2api`
 不动** —— 那是对外发布的部署说明，指向官方镜像是对的。
 
@@ -75,7 +75,7 @@ VPS 上：
 
 ```bash
 # 1. 确认 compose 指向自建镜像
-grep image: docker-compose.yml     # 应为 mosenwoek/agent2api:latest
+grep image: docker-compose.yml     # 应为 nbmosen/agent2api:latest
 
 # 2. 拉取并重启
 docker compose pull

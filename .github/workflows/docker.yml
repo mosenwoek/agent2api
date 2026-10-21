@@ -39,7 +39,7 @@ permissions:
   contents: read
 
 env:
-  IMAGE: mosenwoek/agent2api
+  IMAGE: nbmosen/agent2api
 
 jobs:
   image:

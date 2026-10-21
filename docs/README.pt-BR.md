@@ -36,7 +36,7 @@
 > [`superdady666/agent2api`](https://github.com/superdady666/agent2api).
 >
 > O nome da imagem Docker neste README (`aimodcc/agent2api`) aponta para a imagem oficial do upstream; para a imagem
-> construída por si use `mosenwoek/agent2api` (o `.github/workflows/docker.yml` deste repositório constrói e envia em
+> construída por si use `nbmosen/agent2api` (o `.github/workflows/docker.yml` deste repositório constrói e envia em
 > pushes para `main`).
 
 ---

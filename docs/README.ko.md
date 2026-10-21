@@ -35,7 +35,7 @@
 > [`superdady666/agent2api`](https://github.com/superdady666/agent2api)입니다.
 >
 > 위 README의 Docker 이미지 이름(`aimodcc/agent2api`)은 업스트림 공식 이미지를 가리킵니다. 자체 빌드 이미지는
-> `mosenwoek/agent2api`를 사용하세요(이 저장소의 `.github/workflows/docker.yml`이 `main` 브랜치 push 시 빌드하여
+> `nbmosen/agent2api`를 사용하세요(이 저장소의 `.github/workflows/docker.yml`이 `main` 브랜치 push 시 빌드하여
 > push합니다).
 
 ---

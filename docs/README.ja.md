@@ -35,7 +35,7 @@
 > [`superdady666/agent2api`](https://github.com/superdady666/agent2api) です。
 >
 > 上記 README の Docker イメージ名（`aimodcc/agent2api`）は上流公式镜像を参照しています。自前のイメージは
-> `mosenwoek/agent2api` を使ってください（本リポジトリの `.github/workflows/docker.yml` が `main` への push 時に
+> `nbmosen/agent2api` を使ってください（本リポジトリの `.github/workflows/docker.yml` が `main` への push 時に
 > ビルドして push します）。
 
 ---
