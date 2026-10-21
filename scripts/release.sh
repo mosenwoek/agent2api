@@ -91,8 +91,40 @@ echo "→ build run: $RUN_ID"
 rm -rf dist
 gh run download "$RUN_ID" --repo "$RELEASE_REPO" -D dist
 EXE=$(ls dist/windows-nsis/*.exe)
+BARE_EXE=$(ls dist/windows-bare-exe/*.exe 2>/dev/null || true)
 ASSETS=("$EXE")
-echo "→ 已下载 $(basename "$EXE")"
+
+# ── 附件命名对齐安装包风格：Agent2API_<ver>_x64-setup.exe ──────
+VER="${TAG#v}"
+EXE_FINAL="Agent2API_${VER}_x64-setup.exe"
+cp "$EXE" "dist/$EXE_FINAL"
+ASSETS=("dist/$EXE_FINAL")
+
+# sha256：为每个安装包 / 裸 exe 生成伴随校验文件
+for f in "dist/$EXE_FINAL"; do
+  (cd dist && sha256sum "$(basename "$f")" > "$(basename "$f").sha256")
+done
+ASSETS+=("dist/$EXE_FINAL.sha256")
+
+if [ -n "$BARE_EXE" ]; then
+  BARE_NAME=$(basename "$BARE_EXE")
+  cp "$BARE_EXE" "dist/$BARE_NAME"
+  ASSETS+=("dist/$BARE_NAME")
+  (cd dist && sha256sum "$BARE_NAME" > "$BARE_NAME.sha256")
+  ASSETS+=("dist/$BARE_NAME.sha256")
+  echo "→ 已下载 $(basename "$EXE") + 裸 exe $BARE_NAME"
+else
+  echo "→ 已下载 $(basename "$EXE")（该 run 无 windows-bare-exe artifact，跳过裸 exe）"
+fi
+
+# linux-server-*（amd64 tar.gz + sha256）：后加的，老 tag 的 run 里没有，
+# 只提醒不中断
+if [ -d dist/linux-server-amd64 ]; then
+  for f in dist/linux-server-amd64/*; do ASSETS+=("$f"); done
+  echo "→ linux-server-amd64: $(ls dist/linux-server-amd64 | tr '\n' ' ')"
+else
+  echo "⚠ 该 run 没有 linux-server-amd64 artifact（老 tag / 旧 workflow），跳过"
+fi
 
 # ── 2. 更新日志 = tag 所指提交的提交信息 ──────────────────────
 NOTES_FILE=$(mktemp)
