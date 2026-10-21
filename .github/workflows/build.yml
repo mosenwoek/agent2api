@@ -5,6 +5,8 @@ name: build
 on:
   workflow_dispatch:
   push:
+    branches:
+      - ci-test   # CI 预演分支：验证 build job 可跑，验证完删除
     tags:
       - 'v*'
 
