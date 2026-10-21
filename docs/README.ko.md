@@ -8,7 +8,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT%20%2B%20고지-green)](../LICENSE)
 [![release](https://img.shields.io/github/v/release/weiang12345/agent2api?include_prereleases)](https://github.com/weiang12345/agent2api/releases/latest)
-[![docker pulls](https://img.shields.io/docker/pulls/mosenwoek/agent2api)](https://hub.docker.com/r/mosenwoek/agent2api)
+[![docker pulls](https://img.shields.io/docker/pulls/aimodcc/agent2api)](https://hub.docker.com/r/aimodcc/agent2api)
 [![stars](https://img.shields.io/github/stars/haremank/agent2api?style=flat&color=yellow)](https://github.com/haremank/agent2api/stargazers)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/weiang12345/agent2api/releases/latest)
 
@@ -22,6 +22,21 @@
 > 앱 화면과 모든 비즈니스 로직은 **전혀 변경하지 않았습니다**. 코드 변경은 업데이트 소스 상수(`DEFAULT_REPO`) 한 곳뿐이며, 설치 파일이 남아 있는 fork 릴리스 라인으로 되돌렸습니다. 아울러 업스트림 계정 소실로 끊긴 문서 링크를 수정했습니다.
 >
 > 원 작성자의 계정이 복구되면 이 저장소는 업스트림으로 병합하거나 삭제합니다. 그때까지 장기적으로 유지보수되는 프로젝트로 취급하지 마십시오.
+
+> [!NOTE]
+> **이 저장소(`mosenwoek/agent2api`)는 위 유지보수 버전의 개인 수정판이며 공식 릴리스가 아닙니다.**
+>
+> 유일한 동작 변경: **보안 이벤트 로그에 출처 IP와 User-Agent 기록**. 게이트웨이가 권한 없는 요청을 거부할 때
+> 기존에는 메서드와 경로만 기록되어 누가 스캔 중인지 판단할 수 없었습니다. 이제는 클라이언트 IP(리버스 프록시
+> 뒤에서는 `X-Forwarded-For`의 가장 왼쪽 항목)와 User-Agent를 함께 저장하고, 패널의 "시스템 이벤트" 페이지 각
+> 줄의 보조 행에 표시합니다.
+>
+> 자세한 내용은 [FORK-NOTES.md](../FORK-NOTES.md)를 참고하세요. 업스트림 동기화 출처는
+> [`superdady666/agent2api`](https://github.com/superdady666/agent2api)입니다.
+>
+> 위 README의 Docker 이미지 이름(`aimodcc/agent2api`)은 업스트림 공식 이미지를 가리킵니다. 자체 빌드 이미지는
+> `mosenwoek/agent2api`를 사용하세요(이 저장소의 `.github/workflows/docker.yml`이 `main` 브랜치 push 시 빌드하여
+> push합니다).
 
 ---
 
@@ -139,7 +154,7 @@ print(resp.choices[0].message.content)
 ```bash
 docker run -d --name agent2api --restart unless-stopped \
   -p 3065:3065 -v ./data:/data \
-  mosenwoek/agent2api:latest
+  aimodcc/agent2api:latest
 ```
 
 브라우저에서 `http://<호스트>:3065`를 열면 첫 방문 시 **관리자 계정 등록**으로 안내합니다. 로그인 후 "게이트웨이 키" 페이지에서 클라이언트용 API 키를 만들면 됩니다 — `http://<호스트>:3065/v1`이 OpenAI 호환 엔드포인트이며, 키를 만들기 전에는 전달을 거부합니다. 모든 상태(SQLite 데이터베이스 / 설정 / 로그)는 `./data` 볼륨 하나에 저장됩니다.
@@ -149,7 +164,7 @@ compose 사용자용(amd64 / arm64 이미지 모두 제공):
 ```yaml
 services:
   agent2api:
-    image: mosenwoek/agent2api:latest
+    image: aimodcc/agent2api:latest
     container_name: agent2api
     restart: unless-stopped
     ports:

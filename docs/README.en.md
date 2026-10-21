@@ -8,7 +8,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT%20%2B%20Notice-green)](../LICENSE)
 [![release](https://img.shields.io/github/v/release/weiang12345/agent2api?include_prereleases)](https://github.com/weiang12345/agent2api/releases/latest)
-[![docker pulls](https://img.shields.io/docker/pulls/mosenwoek/agent2api)](https://hub.docker.com/r/mosenwoek/agent2api)
+[![docker pulls](https://img.shields.io/docker/pulls/aimodcc/agent2api)](https://hub.docker.com/r/aimodcc/agent2api)
 [![stars](https://img.shields.io/github/stars/haremank/agent2api?style=flat&color=yellow)](https://github.com/haremank/agent2api/stargazers)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/weiang12345/agent2api/releases/latest)
 
@@ -22,6 +22,21 @@
 > The application UI and all business logic are **unchanged**. The only code change is the update-source constant (`DEFAULT_REPO`), pointed back at the fork release line that still hosts installers; broken documentation links caused by the upstream account loss were also repaired.
 >
 > Once the original author's account is restored, this repository will be merged back upstream or removed. Until then, please do not treat it as a long-term maintained project.
+
+> [!NOTE]
+> **This repository (`mosenwoek/agent2api`) is a personal modification of the maintenance fork above — not an official release.**
+>
+> The only behavioural change: **security events record the source IP and User-Agent**. When the gateway rejects an
+> unauthorized request it used to log only the method and path, so there was no way to tell who was scanning; now the
+> client IP (leftmost `X-Forwarded-For` entry when behind a reverse proxy) and the User-Agent are stored as well and
+> shown on the sub-line of each entry in the panel's "System Events" page.
+>
+> See [FORK-NOTES.md](../FORK-NOTES.md) for details. The upstream sync source is
+> [`superdady666/agent2api`](https://github.com/superdady666/agent2api).
+>
+> The Docker image name in this README (`aimodcc/agent2api`) points at the official upstream image; for the self-built
+> image use `mosenwoek/agent2api` (built and pushed by this repository's `.github/workflows/docker.yml` on pushes to
+> `main`).
 
 ---
 
@@ -139,7 +154,7 @@ By default the gateway only listens on `127.0.0.1`. After turning on "Settings �
 ```bash
 docker run -d --name agent2api --restart unless-stopped \
   -p 3065:3065 -v ./data:/data \
-  mosenwoek/agent2api:latest
+  aimodcc/agent2api:latest
 ```
 
 Open `http://<host>:3065` in a browser — the first visit walks you through **registering the admin account**; log in and create an API key in the "Gateway Keys" page for your clients — `http://<host>:3065/v1` is the OpenAI-compatible endpoint (it refuses to forward until the first key exists). All state (SQLite database / config / logs) lives in the `./data` volume.
@@ -149,7 +164,7 @@ Compose users (images are published for amd64 and arm64):
 ```yaml
 services:
   agent2api:
-    image: mosenwoek/agent2api:latest
+    image: aimodcc/agent2api:latest
     container_name: agent2api
     restart: unless-stopped
     ports:

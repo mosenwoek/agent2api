@@ -8,7 +8,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT%20%2B%20Aviso-green)](../LICENSE)
 [![release](https://img.shields.io/github/v/release/weiang12345/agent2api?include_prereleases)](https://github.com/weiang12345/agent2api/releases/latest)
-[![docker pulls](https://img.shields.io/docker/pulls/mosenwoek/agent2api)](https://hub.docker.com/r/mosenwoek/agent2api)
+[![docker pulls](https://img.shields.io/docker/pulls/aimodcc/agent2api)](https://hub.docker.com/r/aimodcc/agent2api)
 [![stars](https://img.shields.io/github/stars/haremank/agent2api?style=flat&color=yellow)](https://github.com/haremank/agent2api/stargazers)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/weiang12345/agent2api/releases/latest)
 
@@ -22,6 +22,22 @@
 > A interface do aplicativo e toda a lógica de negócio estão **inalteradas**. A única mudança de código é a constante da fonte de atualização (`DEFAULT_REPO`), apontada de volta para a linha de releases do fork que ainda hospeda instaladores; os links quebrados na documentação pela perda da conta upstream também foram corrigidos.
 >
 > Quando a conta do autor original for restaurada, este repositório será mesclado ao upstream ou removido. Até lá, não o trate como um projeto mantido a longo prazo.
+
+> [!NOTE]
+> **Este repositório (`mosenwoek/agent2api`) é uma modificação pessoal da versão de manutenção acima — não é um release oficial.**
+>
+> A única mudança de comportamento: **eventos de segurança registram o IP de origem e o User-Agent**. Quando o
+> gateway rejeita uma requisição não autorizada, antes era registrado apenas o método e o caminho, sem forma de
+> descobrir quem estava a escanear; agora o IP do cliente (a entrada mais à esquerda de `X-Forwarded-For` quando há
+> reverse proxy) e o User-Agent são guardados e mostrados na sub-linha de cada entrada na página "Eventos do sistema"
+> do painel.
+>
+> Veja [FORK-NOTES.md](../FORK-NOTES.md) para os detalhes. A fonte de sincronização upstream é
+> [`superdady666/agent2api`](https://github.com/superdady666/agent2api).
+>
+> O nome da imagem Docker neste README (`aimodcc/agent2api`) aponta para a imagem oficial do upstream; para a imagem
+> construída por si use `mosenwoek/agent2api` (o `.github/workflows/docker.yml` deste repositório constrói e envia em
+> pushes para `main`).
 
 ---
 
@@ -139,7 +155,7 @@ Por padrão o gateway escuta apenas `127.0.0.1`. Ao ativar "Configurações → 
 ```bash
 docker run -d --name agent2api --restart unless-stopped \
   -p 3065:3065 -v ./data:/data \
-  mosenwoek/agent2api:latest
+  aimodcc/agent2api:latest
 ```
 
 Abra `http://<host>:3065` no navegador: a primeira visita guia o **cadastro do administrador**; depois de entrar, crie uma API key na página "Gateway Keys" para os clientes — `http://<host>:3065/v1` é o endpoint compatível com OpenAI (sem nenhuma chave ele recusa o encaminhamento). Todo o estado (banco SQLite / configuração / logs) fica em um único volume `./data`.
@@ -149,7 +165,7 @@ Para quem usa compose (há imagens amd64 e arm64):
 ```yaml
 services:
   agent2api:
-    image: mosenwoek/agent2api:latest
+    image: aimodcc/agent2api:latest
     container_name: agent2api
     restart: unless-stopped
     ports:

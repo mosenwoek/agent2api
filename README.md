@@ -8,7 +8,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT%20%2B%20附加声明-green)](./LICENSE)
 [![release](https://img.shields.io/github/v/release/weiang12345/agent2api?include_prereleases)](https://github.com/weiang12345/agent2api/releases/latest)
-[![docker pulls](https://img.shields.io/docker/pulls/mosenwoek/agent2api)](https://hub.docker.com/r/mosenwoek/agent2api)
+[![docker pulls](https://img.shields.io/docker/pulls/aimodcc/agent2api)](https://hub.docker.com/r/aimodcc/agent2api)
 [![stars](https://img.shields.io/github/stars/haremank/agent2api?style=flat&color=yellow)](https://github.com/haremank/agent2api/stargazers)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/weiang12345/agent2api/releases/latest)
 
@@ -22,6 +22,21 @@
 > 应用界面与全部业务逻辑**均未改动**；代码只改了更新源常量一处（`DEFAULT_REPO`），让它指回仍挂着安装包的 fork 发布线，另修正了因上游账号失效而断掉的文档链接。
 >
 > 待原作者账号恢复后，本仓库将被合并回上游。
+
+> [!NOTE]
+> **本仓库（`mosenwoek/agent2api`）是上述维护版的个人修改版，非官方发布。**
+>
+> 唯一的业务改动：**安全事件日志记录来源 IP 与 UA** —— 网关拒绝未授权的请求时，
+> 原本只记方法与路径，无法判断是谁在发起扫描；现在会把客户端 IP（反代透传时
+> 取 `X-Forwarded-For` 最左项）与 User-Agent 一并落库，在面板「系统事件」页的
+> 副行显示。
+>
+> 改动说明见 [FORK-NOTES.md](./FORK-NOTES.md)。上游同步来源为
+> [`superdady666/agent2api`](https://github.com/superdady666/agent2api)。
+>
+> 上面 README 里的 Docker 镜像名（`aimodcc/agent2api`）指向上游官方镜像；
+> 自建镜像请用 `mosenwoek/agent2api`（本仓库的 `.github/workflows/docker.yml`
+> 在 main 分支推送时构建推送）。
 
 ---
 
@@ -139,7 +154,7 @@ print(resp.choices[0].message.content)
 ```bash
 docker run -d --name agent2api --restart unless-stopped \
   -p 3065:3065 -v ./data:/data \
-  mosenwoek/agent2api:latest
+  aimodcc/agent2api:latest
 ```
 
 浏览器打开 `http://<主机>:3065`，首次进入会引导**注册管理员账号**；登录后在「网关 Key」页建一把 API Key 给客户端用 —— `http://<主机>:3065/v1` 即 OpenAI 兼容端点（未建 Key 前拒绝转发）。状态（SQLite 库 / 配置 / 日志）都在 `./data` 一个卷里。
@@ -149,7 +164,7 @@ compose 用户（amd64 / arm64 都有镜像）：
 ```yaml
 services:
   agent2api:
-    image: mosenwoek/agent2api:latest
+    image: aimodcc/agent2api:latest
     container_name: agent2api
     restart: unless-stopped
     ports:

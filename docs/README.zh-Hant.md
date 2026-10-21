@@ -8,7 +8,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT%20%2B%20附加聲明-green)](../LICENSE)
 [![release](https://img.shields.io/github/v/release/weiang12345/agent2api?include_prereleases)](https://github.com/weiang12345/agent2api/releases/latest)
-[![docker pulls](https://img.shields.io/docker/pulls/mosenwoek/agent2api)](https://hub.docker.com/r/mosenwoek/agent2api)
+[![docker pulls](https://img.shields.io/docker/pulls/aimodcc/agent2api)](https://hub.docker.com/r/aimodcc/agent2api)
 [![stars](https://img.shields.io/github/stars/haremank/agent2api?style=flat&color=yellow)](https://github.com/haremank/agent2api/stargazers)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/weiang12345/agent2api/releases/latest)
 
@@ -22,6 +22,19 @@
 > 應用介面與全部業務邏輯**均未改動**；程式碼只改了更新來源常數一處（`DEFAULT_REPO`），讓它指回仍掛著安裝包的 fork 發布線，另修正了因上游帳號失效而中斷的文件連結。
 >
 > 待原作者帳號恢復後，本倉庫將被合併回上游或直接清除。在此之前，請勿將其視為長期維護專案。
+
+> [!NOTE]
+> **本倉庫（`mosenwoek/agent2api`）是上述維護版的個人修改版，非官方發布。**
+>
+> 唯一的業務改動：**安全事件日誌記錄來源 IP 與 UA** —— 網關拒絕未授權的請求時，原本只記方法與路徑，
+> 無法判斷是誰在發起掃描；現在會把用戶端 IP（反代透傳時取 `X-Forwarded-For` 最左項）與 User-Agent 一併落庫，
+> 在面板「系統事件」頁的副行顯示。
+>
+> 改動說明見 [FORK-NOTES.md](../FORK-NOTES.md)。上游同步來源為
+> [`superdady666/agent2api`](https://github.com/superdady666/agent2api)。
+>
+> 上面 README 裡的 Docker 鏡像名（`aimodcc/agent2api`）指向上游官方鏡像；自建鏡像請用 `mosenwoek/agent2api`
+> （本倉庫的 `.github/workflows/docker.yml` 在 main 分支推送時建置推送）。
 
 ---
 
@@ -139,7 +152,7 @@ print(resp.choices[0].message.content)
 ```bash
 docker run -d --name agent2api --restart unless-stopped \
   -p 3065:3065 -v ./data:/data \
-  mosenwoek/agent2api:latest
+  aimodcc/agent2api:latest
 ```
 
 瀏覽器開啟 `http://<主機>:3065`，首次進入會引導**註冊管理員帳號**；登入後在「閘道 Key」頁建立一把 API Key 給客戶端用 —— `http://<主機>:3065/v1` 即 OpenAI 相容端點（未建立 Key 前拒絕轉發）。所有狀態（SQLite 資料庫 / 設定 / 日誌）都落在 `./data` 一個卷裡。
@@ -149,7 +162,7 @@ compose 使用者（amd64 / arm64 都有映像）：
 ```yaml
 services:
   agent2api:
-    image: mosenwoek/agent2api:latest
+    image: aimodcc/agent2api:latest
     container_name: agent2api
     restart: unless-stopped
     ports:

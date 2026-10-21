@@ -1,6 +1,9 @@
-# 本 fork 的改动（相对上游 aimod-cc/agent2api）
+# 本 fork 的改动（相对上游 superdady666/agent2api）
 
 个人自建分支。改动集中在一处动机：**安全事件要能溯源**。
+
+上游链路：`aimod-cc/agent2api`（原项目，作者账号已封禁）→ `weiang12345/agent2api`
+→ `superdady666/agent2api`（当前维护版，本 fork 的同步来源）→ `mosenwoek/agent2api`（本仓库）。
 
 ## 改动 1：拒绝未授权的请求时记录来源 IP 与 UA
 
@@ -62,12 +65,19 @@
   （个人 fork 的 main 就是「当前在用的那一份」，VPS 拉 `:latest` 就能拿到改动）
 - `:latest` 的移动规则：main 分支或正式版 tag（不含 `-`）；beta tag 不动 `:latest`
 
-`docker-compose.yml` 与各语言 README 的镜像名同步改为 `mosenwoek/agent2api`。
+`docker-compose.yml` 的镜像名改为 `mosenwoek/agent2api`（这是**自用**配置，
+要换成带 IP/UA 改动的镜像）。**README 各语言版保持上游的 `aimodcc/agent2api`
+不动** —— 那是对外发布的部署说明，指向官方镜像是对的。
 
 ## 部署
 
+VPS 上：
+
 ```bash
-# VPS 上
+# 1. 确认 compose 指向自建镜像
+grep image: docker-compose.yml     # 应为 mosenwoek/agent2api:latest
+
+# 2. 拉取并重启
 docker compose pull
 docker compose up -d
 docker logs -f agent2api
@@ -75,12 +85,20 @@ docker logs -f agent2api
 
 数据卷 `./data` 不动 —— 升级后账号、Key、日志、报表全部保留。
 
+**nginx 反代要带 `X-Forwarded-For`**，否则日志里记的是容器网关地址（172.17.x.1）
+而不是真实来源：
+
+```nginx
+proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+proxy_set_header X-Real-IP $remote_addr;
+```
+
 ## 上游同步
 
-上游仓库（`aimod-cc/agent2api` → 现 `haremank/agent2api`）的改动可以随时合进来：
+上游维护版仓库（`superdady666/agent2api`）的改动可以随时合进来：
 
 ```bash
-git remote add upstream https://github.com/haremank/agent2api.git
+git remote add upstream https://github.com/superdady666/agent2api.git
 git fetch upstream
 git merge upstream/main
 ```

@@ -8,7 +8,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT%20%2B%20告知-green)](../LICENSE)
 [![release](https://img.shields.io/github/v/release/weiang12345/agent2api?include_prereleases)](https://github.com/weiang12345/agent2api/releases/latest)
-[![docker pulls](https://img.shields.io/docker/pulls/mosenwoek/agent2api)](https://hub.docker.com/r/mosenwoek/agent2api)
+[![docker pulls](https://img.shields.io/docker/pulls/aimodcc/agent2api)](https://hub.docker.com/r/aimodcc/agent2api)
 [![stars](https://img.shields.io/github/stars/haremank/agent2api?style=flat&color=yellow)](https://github.com/haremank/agent2api/stargazers)
 [![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Docker-blue)](https://github.com/weiang12345/agent2api/releases/latest)
 
@@ -22,6 +22,21 @@
 > アプリの画面とビジネスロジックは**一切変更していません**。コードの変更は更新元の定数（`DEFAULT_REPO`）一箇所のみで、インストーラーが残る fork のリリースラインに戻しました。あわせて上流アカウントの消失で切れたドキュメント内リンクを修正しました。
 >
 > 原作者のアカウントが復旧した時点で、本リポジトリは上流へマージするか削除します。それまでは長期的に保守されるプロジェクトとして扱わないでください。
+
+> [!NOTE]
+> **本リポジトリ（`mosenwoek/agent2api`）は上記のメンテナンス版に対する個人の改変版であり、公式リリースではありません。**
+>
+> 唯一放下了 행동変更：**セキュリティイベントのログに送信元 IP と User-Agent を記録**。ゲートウェイが未認可の
+> リクエストを拒否する際，传统はメソッドとパスしか記録せず、誰がスキャンしていたか判断できませんでした。現在は
+> クライアント IP（リバースプロキシ配下では `X-Forwarded-For` の左端の項目）と User-Agent も保存し、パネルの
+> 「システムイベント」ページの各行の副行に表示されます。
+>
+> 詳細は [FORK-NOTES.md](../FORK-NOTES.md) を参照。上流の同期元は
+> [`superdady666/agent2api`](https://github.com/superdady666/agent2api) です。
+>
+> 上記 README の Docker イメージ名（`aimodcc/agent2api`）は上流公式镜像を参照しています。自前のイメージは
+> `mosenwoek/agent2api` を使ってください（本リポジトリの `.github/workflows/docker.yml` が `main` への push 時に
+> ビルドして push します）。
 
 ---
 
@@ -139,7 +154,7 @@ print(resp.choices[0].message.content)
 ```bash
 docker run -d --name agent2api --restart unless-stopped \
   -p 3065:3065 -v ./data:/data \
-  mosenwoek/agent2api:latest
+  aimodcc/agent2api:latest
 ```
 
 ブラウザーで `http://<ホスト>:3065` を開くと、初回は**管理者アカウントの登録**へ案内されます。ログイン後、「ゲートウェイキー」ページでクライアント用の API キーを作成してください —— `http://<ホスト>:3065/v1` が OpenAI 互換エンドポイントです（キーを作成するまで転送は拒否されます）。すべての状態（SQLite データベース / 設定 / ログ）は `./data` ボリューム 1 つに収まります。
@@ -149,7 +164,7 @@ compose を使う場合（amd64 / arm64 のイメージがあります）:
 ```yaml
 services:
   agent2api:
-    image: mosenwoek/agent2api:latest
+    image: aimodcc/agent2api:latest
     container_name: agent2api
     restart: unless-stopped
     ports:
