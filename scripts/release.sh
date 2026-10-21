@@ -30,9 +30,14 @@ esac
 # /releases/latest，它**排除**被标记的预发布；只有打开开关的人才从 /releases
 # 列表里把 beta 捞出来。漏标 = beta 会被所有正式版用户当成正式更新收到；
 # 给正式版误标则谁都不更新。所以这里按 tag 自动判、并顺手修正已存在的 Release。
+#
+# 预发布后缀只认 -beta.* / -rc.* / -alpha.* / -pre.* / -test.*；
+# 本 fork 的固定版本号格式 -fork.N（3.0.8-fork.2）是正式版号的一部分，
+# 不算预发布 —— 否则每次 fork 发版都会被误标 pre-release，永远进不了
+# /releases/latest 通道，App 内正式版用户收不到更新。
 case "${TAG#v}" in
-  *-*) PRERELEASE=true ;;
-  *)   PRERELEASE=false ;;
+  *-beta.*|*-rc.*|*-alpha.*|*-pre.*|*-test.*) PRERELEASE=true ;;
+  *)                                          PRERELEASE=false ;;
 esac
 if [ "$PRERELEASE" = true ]; then
   echo "→ 检测到预发布后缀（${TAG#v}），Release 标记为 pre-release（只发给「加入 beta 版」的用户）"
