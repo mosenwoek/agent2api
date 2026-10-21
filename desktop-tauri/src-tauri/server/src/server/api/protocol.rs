@@ -29,9 +29,11 @@
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{Extension, State};
+use axum::extract::{ConnectInfo, Extension, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::Response;
+
+use std::net::SocketAddr;
 use serde_json::{json, Value};
 
 use crate::server::core::key_scope::KeyScope;
@@ -46,13 +48,15 @@ use crate::server::ServerState;
 
 use super::disconnect_guard::DisconnectGuard;
 use super::pipeline::{
-    self, error_response, json_response, record_early_failure, sse_response, RecordContext,
+    self, error_response, json_response, record_early_failure_with_source, sse_response, RecordContext,
 };
 
 /// 把请求体解析成 JSON 对象（失败给 400 + 记账）。
 ///
 /// `client` 由调用方从请求头判好带入（早失败也要能看出「是谁发来的」，
-/// 见 `record_early_failure` 的说明）。
+/// 见 `record_early_failure` 的说明）；`client_ip` / `client_ua` 同理
+/// （schema v17，非法 body 恰恰最需要来源）。
+#[allow(clippy::too_many_arguments)]
 fn parse_object(
     state: &ServerState,
     started_at: i64,
@@ -61,11 +65,24 @@ fn parse_object(
     client: &str,
     key_id: &str,
     key_name: &str,
+    client_ip: &str,
+    client_ua: &str,
 ) -> Result<Value, Response> {
     let parsed = serde_json::from_slice::<Value>(body).ok();
     let Some(payload) = parsed.filter(Value::is_object) else {
         let error = GatewayError::bad_request("请求体必须是 JSON 对象");
-        record_early_failure(state, started_at, "", "", client, key_id, key_name, &error);
+        record_early_failure_with_source(
+            state,
+            started_at,
+            "",
+            "",
+            client,
+            key_id,
+            key_name,
+            client_ip,
+            client_ua,
+            &error,
+        );
         logging::verbose("[Model]", &format!("← POST {path} 请求体不是 JSON 对象"));
         return Err(error.payload_response());
     };
@@ -147,12 +164,16 @@ pub async fn responses_endpoint(
     // `core::key_scope` 模块头）。用 `Option<Extension<_>>` 而不是裸
     // `Extension<_>` —— 后者在免鉴权模式下取不到会直接拒绝请求。
     key_scope: Option<Extension<KeyScope>>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     body: Bytes,
 ) -> Response {
     let scope = key_scope.map(|Extension(scope)| scope);
     let started_at = logging::now_ms();
     // 请求来源客户端（UA 识别，见 `core::client`）：早失败路径与收尾记账共用
     let client = crate::server::core::client::classify(&pipeline::user_agent_of(&headers));
+    // 来源 IP / 原始 UA（schema v17）：在 headers 被 move 之前判好
+    let client_ip = crate::server::http::client_ip_from(&headers, peer.map(|Extension(info)| info.0));
+    let client_ua = pipeline::truncate_ua(&pipeline::user_agent_of(&headers));
     let path = "/v1/responses";
     let raw = match parse_object(
         &state,
@@ -162,6 +183,8 @@ pub async fn responses_endpoint(
         &client,
         scope.as_ref().map_or("", |s| s.key_id()),
         scope.as_ref().map_or("", |s| s.key_name()),
+        &client_ip,
+        &client_ua,
     ) {
         Ok(value) => value,
         Err(response) => return response,
@@ -180,7 +203,7 @@ pub async fn responses_endpoint(
         Ok(body) => body,
         Err(message) => {
             let error = GatewayError::bad_request(message);
-            record_early_failure(&state, started_at, &pipeline::model_field_text(&raw), &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &error);
+            record_early_failure_with_source(&state, started_at, &pipeline::model_field_text(&raw), &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &client_ip, &client_ua, &error);
             return error.payload_response();
         }
     };
@@ -190,7 +213,7 @@ pub async fn responses_endpoint(
         .unwrap_or(false)
     {
         let error = GatewayError::bad_request("input 必须能转换成对话消息");
-        record_early_failure(&state, started_at, "", &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &error);
+        record_early_failure_with_source(&state, started_at, "", &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &client_ip, &client_ua, &error);
         return error.payload_response();
     }
 
@@ -199,7 +222,7 @@ pub async fn responses_endpoint(
     let requested_model = match pipeline::resolve_model(&state, &mut chat_body, scope.as_ref()) {
         Ok(model) => model,
         Err(error) => {
-            record_early_failure(&state, started_at, &pipeline::model_field_text(&raw), &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &error);
+            record_early_failure_with_source(&state, started_at, &pipeline::model_field_text(&raw), &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &client_ip, &client_ua, &error);
             return error.payload_response();
         }
     };
@@ -237,6 +260,8 @@ pub async fn responses_endpoint(
         &client,
         scope.as_ref().map_or("", |scope| scope.key_id()),
         scope.as_ref().map_or("", |scope| scope.key_name()),
+        &client_ip,
+        &client_ua,
         // 真实流量：不是模型测试（见 `RecordContext::is_test`）
         false,
     );
@@ -282,6 +307,8 @@ pub async fn responses_endpoint(
         is_test: false,
         // 来源客户端：入口判好带进来（见 `RecordContext::client`）
         client: client.clone(),
+        client_ip: client_ip.clone(),
+        client_ua: client_ua.clone(),
     };
 
     match outcome {
@@ -358,12 +385,16 @@ pub async fn messages_endpoint(
     headers: HeaderMap,
     // R9：同 responses_endpoint（`Option` + 取不到 = 不限制）
     key_scope: Option<Extension<KeyScope>>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     body: Bytes,
 ) -> Response {
     let scope = key_scope.map(|Extension(scope)| scope);
     let started_at = logging::now_ms();
     // 请求来源客户端（UA 识别，见 `core::client`）：早失败路径与收尾记账共用
     let client = crate::server::core::client::classify(&pipeline::user_agent_of(&headers));
+    // 来源 IP / 原始 UA（schema v17）：在 headers 被 move 之前判好
+    let client_ip = crate::server::http::client_ip_from(&headers, peer.map(|Extension(info)| info.0));
+    let client_ua = pipeline::truncate_ua(&pipeline::user_agent_of(&headers));
     let path = "/v1/messages";
     let raw = match parse_object(
         &state,
@@ -373,6 +404,8 @@ pub async fn messages_endpoint(
         &client,
         scope.as_ref().map_or("", |s| s.key_id()),
         scope.as_ref().map_or("", |s| s.key_name()),
+        &client_ip,
+        &client_ua,
     ) {
         Ok(value) => value,
         Err(response) => return response,
@@ -384,7 +417,7 @@ pub async fn messages_endpoint(
         Ok(body) => body,
         Err(message) => {
             let error = GatewayError::bad_request(message);
-            record_early_failure(&state, started_at, &pipeline::model_field_text(&raw), "", &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &error);
+            record_early_failure_with_source(&state, started_at, &pipeline::model_field_text(&raw), "", &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &client_ip, &client_ua, &error);
             return anthropic_error_response(&error);
         }
     };
@@ -395,7 +428,7 @@ pub async fn messages_endpoint(
     let requested_model = match pipeline::resolve_model(&state, &mut chat_body, scope.as_ref()) {
         Ok(model) => model,
         Err(error) => {
-            record_early_failure(&state, started_at, &pipeline::model_field_text(&raw), &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &error);
+            record_early_failure_with_source(&state, started_at, &pipeline::model_field_text(&raw), &client_reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &client_ip, &client_ua, &error);
             return anthropic_error_response(&error);
         }
     };
@@ -432,6 +465,8 @@ pub async fn messages_endpoint(
         &client,
         scope.as_ref().map_or("", |scope| scope.key_id()),
         scope.as_ref().map_or("", |scope| scope.key_name()),
+        &client_ip,
+        &client_ua,
         // 真实流量：不是模型测试（见 `RecordContext::is_test`）
         false,
     );
@@ -477,6 +512,8 @@ pub async fn messages_endpoint(
         is_test: false,
         // 来源客户端：入口判好带进来（见 `RecordContext::client`）
         client: client.clone(),
+        client_ip: client_ip.clone(),
+        client_ua: client_ua.clone(),
     };
 
     match outcome {

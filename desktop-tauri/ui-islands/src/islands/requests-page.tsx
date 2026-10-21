@@ -79,6 +79,13 @@ type RequestEntry = {
   /** 来源客户端（后端 `client`：入口按下游 User-Agent 分类的结果；
    *  空串 / 缺键 = 没有记录 —— 旧行、模型测试、请求未带 UA 的行） */
   client?: string
+  /** **原始 User-Agent**（后端 `clientUa`，schema v17）。与 `client` 的区别：
+   *  那个是归类（有损），这个是原值（无损）—— 「客户端」列的悬停提示读它，
+   *  于是不占列宽又能看到具体版本。空串 / 缺键 = 请求没带 UA 或 v17 之前的旧行 */
+  clientUa?: string
+  /** **请求来源 IP**（后端 `clientIp`，schema v17）。空串 / 缺键 = 没有记录
+   *  （v17 之前的旧行、面板内部发起的助手 / 模型测试） */
+  clientIp?: string
 }
 
 type RequestQueryResult = {
@@ -265,6 +272,10 @@ const COLUMNS: Column[] = [
   { key: 'status', label: t('状态'), sel: '.req-status', track: '96px' },
   { key: 'model', label: t('模型'), sel: '.req-model', track: 'minmax(0, 1.3fr)' },
   { key: 'client', label: t('客户端'), sel: '.req-client', track: '110px' },
+  // 「来源 IP」列（schema v17）：排障时「谁在打这个网关」的第一读数。
+  // 宽度比客户端列略宽（IPv6 最长 45 字符，但常见是 IPv4 的 15 字符左右）；
+  // 用 minmax(0, ...) 让它在窄屏下可以被挤压而不是撑破表格
+  { key: 'ip', label: t('来源 IP'), sel: '.req-ip', track: 'minmax(0, 0.9fr)' },
   { key: 'dur', label: t('用时'), sel: '.req-dur', track: '96px', align: 'right' },
   { key: 'usage', label: t('用量'), sel: '.req-usage', track: 'minmax(0, 1.6fr)' },
   { key: 'error', label: t('错误'), sel: '.req-error-cell', track: 'minmax(0, 1.2fr)' },
@@ -907,20 +918,51 @@ function requestCell(entry: RequestEntry, column: VisibleColumn): React.ReactNod
       // 后端存的是**归类结果**（Codex / ZCode / Claude Code / …，见 core::client），
       // 空串 = 没有记录（旧行、模型测试、请求未带 UA）。产品名是标识符不翻译，
       // 只有兜底类 `other` 翻成「其它」；空值给占位符而不是空格子。
+      //
+      // ── 原始 UA 挂在悬停提示里（schema v17）────────────────────
+      // 归类回答「哪家客户端」，原始 UA 回答「具体哪个版本 / 是不是脚本」——
+      // 后者太长（实测 40~200 字符），放进表格会把这一列撑爆，所以只做
+      // tooltip。两者都取不到时（`other` 且无原始 UA）才说「识别到 UA 但
+      // 不属于已知类型」；有原始 UA 就直接展示它，比那句推断更准确。
       const value = String(entry.client ?? '').trim()
+      const ua = String(entry.clientUa ?? '').trim()
       if (!value) {
         return (
           <span key={key} className={`${className} is-empty`}
-            title={t('这条明细没有记录来源客户端（旧数据、模型测试，或请求未带 User-Agent）')}>—</span>
+            title={ua
+              ? t('未识别出客户端类型，原始 User-Agent：{ua}', { ua })
+              : t('这条明细没有记录来源客户端（旧数据、模型测试，或请求未带 User-Agent）')}>—</span>
         )
       }
       const label = value === 'other' ? t('其它') : value
+      // 有原始 UA 时优先展示它（`other` 的情形尤其需要）：那是排障时真正想看的
+      const title = ua
+        ? t('来源客户端：{client}｜原始 User-Agent：{ua}', { client: label, ua })
+        : value === 'other'
+          ? t('识别到 User-Agent，但不属于已知的客户端类型')
+          : t('来源客户端：{client}', { client: label })
       return (
-        <span key={key} className={className}
-          title={value === 'other'
-            ? t('识别到 User-Agent，但不属于已知的客户端类型：{ua}', { ua: value })
-            : t('来源客户端：{client}', { client: label })}>
+        <span key={key} className={className} title={title}>
           {label}
+        </span>
+      )
+    }
+
+    case 'ip': {
+      // 来源 IP（schema v17）：空串 = 没有记录（旧行 / 面板内部发起的请求）。
+      // 直接显示原值不做过长截断 —— IP 本身有上限（IPv6 45 字符），
+      // 而截断会让 `2001:db8::1` 与 `2001:db8::2` 看起来一样，那正是排障时
+      // 最不能接受的事。靠 CSS 的 overflow 处理溢出。
+      const value = String(entry.clientIp ?? '').trim()
+      if (!value) {
+        return (
+          <span key={key} className={`${className} is-empty`}
+            title={t('这条明细没有记录来源 IP（旧数据，或面板内部发起的请求）')}>—</span>
+        )
+      }
+      return (
+        <span key={key} className={className} title={t('请求来源 IP：{ip}', { ip: value })}>
+          {value}
         </span>
       )
     }

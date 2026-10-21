@@ -599,7 +599,7 @@ pub async fn run_model_test(State(state): State<ServerState>, body: Bytes) -> Re
     // 那件事已经由 `is_test` 表达（见 `request_stats::RequestEntry::client`）
     state
         .request_stats()
-        .record_started(&test_id, started_at, &model, &model, &reasoning, "", "", "", true);
+        .record_started(&test_id, started_at, &model, &model, &reasoning, "", "", "", "", "", true);
     if let Some(token) = cancellation::register(&test_id) {
         telemetry.set_cancel_token(token);
     }
@@ -644,6 +644,9 @@ pub async fn run_model_test(State(state): State<ServerState>, body: Bytes) -> Re
         is_test: true,
         // 客户端空串：测试没有下游 UA（与上面的 record_started 同口径）
         client: String::new(),
+        // 来源同样空串：测试是网关自己发起的，没有下游连接地址
+        client_ip: String::new(),
+        client_ua: String::new(),
     };
     pipeline::record_entry(&context, None);
     guard.complete();

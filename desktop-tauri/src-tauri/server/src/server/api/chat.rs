@@ -44,10 +44,12 @@
 use std::sync::Arc;
 
 use axum::body::Bytes;
-use axum::extract::{Extension, State};
+use axum::extract::{ConnectInfo, Extension, State};
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{json, Value};
+
+use std::net::SocketAddr;
 
 use crate::server::config;
 use crate::server::core::upstream::cancellation;
@@ -61,7 +63,7 @@ use crate::server::ServerState;
 
 use super::disconnect_guard::DisconnectGuard;
 use super::pipeline::{
-    self, json_response, model_field_text, record_early_failure, record_entry, sse_response,
+    self, json_response, model_field_text, record_early_failure_with_source, record_entry, sse_response,
     write_debug_files, RecordContext, RecordingStream,
 };
 
@@ -75,6 +77,7 @@ pub async fn chat_completions(
     // axum 对 `Option<Extension<T>>` 有专门实现：取不到就是 `None`，不会像
     // 裸 `Extension<T>` 那样直接拒绝请求（那会把整个免鉴权模式打回 500）。
     key_scope: Option<Extension<crate::server::core::key_scope::KeyScope>>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     body: Bytes,
 ) -> Response {
     let scope = key_scope.map(|Extension(scope)| scope);
@@ -83,11 +86,16 @@ pub async fn chat_completions(
     // 请求来源客户端（UA 识别，见 `core::client`）：在 headers 被 move 进转发层
     // 之前先判好，早失败路径与收尾记账共用同一个值
     let client = crate::server::core::client::classify(&pipeline::user_agent_of(&headers));
+    // 来源 IP / 原始 UA（schema v17）：同样在 headers 被 move 之前判好。
+    // `Option<ConnectInfo>` 而不是裸提取器 —— 单测 / 内部调用没有连接信息时
+    // 裸提取器会直接拒请求，而「没有对端地址」只是日志少一列，不该影响转发。
+    let client_ip = crate::server::http::client_ip_from(&headers, peer.map(|Extension(info)| info.0));
+    let client_ua = pipeline::truncate_ua(&pipeline::user_agent_of(&headers));
     // ① body 必须是 JSON 对象（数组/标量/null 都算非法）
     let parsed = serde_json::from_slice::<Value>(&body).ok();
     let Some(mut payload) = parsed.filter(Value::is_object) else {
         let error = GatewayError::bad_request("请求体必须是 JSON 对象");
-        record_early_failure(&state, started_at, "", "", &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &error);
+        record_early_failure_with_source(&state, started_at, "", "", &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &client_ip, &client_ua, &error);
         return error.payload_response();
     };
     // ② messages 必须是数组
@@ -99,7 +107,7 @@ pub async fn chat_completions(
         let error = GatewayError::bad_request("缺少 messages 数组");
         let model = model_field_text(&payload);
         let reasoning = pipeline::client_reasoning_of(&payload);
-        record_early_failure(&state, started_at, &model, &reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &error);
+        record_early_failure_with_source(&state, started_at, &model, &reasoning, &client, scope.as_ref().map_or("", |scope| scope.key_id()), scope.as_ref().map_or("", |scope| scope.key_name()), &client_ip, &client_ua, &error);
         return error.payload_response();
     }
 
@@ -127,7 +135,7 @@ pub async fn chat_completions(
     let requested_model = match pipeline::resolve_model(&state, &mut payload, scope.as_ref()) {
         Ok(model) => model,
         Err(error) => {
-            record_early_failure(
+            record_early_failure_with_source(
                 &state,
                 started_at,
                 &model_field_text(&payload),
@@ -135,6 +143,8 @@ pub async fn chat_completions(
                 &client,
                 scope.as_ref().map_or("", |scope| scope.key_id()),
                 scope.as_ref().map_or("", |scope| scope.key_name()),
+                &client_ip,
+                &client_ua,
                 &error,
             );
             return error.payload_response();
@@ -176,6 +186,8 @@ pub async fn chat_completions(
             &client,
             scope.as_ref().map_or("", |scope| scope.key_id()),
             scope.as_ref().map_or("", |scope| scope.key_name()),
+            &client_ip,
+            &client_ua,
             // 真实流量：不是模型测试（见 `RecordContext::is_test`）
             false,
         );
@@ -265,6 +277,9 @@ pub async fn chat_completions(
                 is_test: false,
                 // 来源客户端：入口判好带进来（见 `RecordContext::client`）
                 client: client.clone(),
+                // 来源 IP / 原始 UA（schema v17）：同样入口判好带进来
+                client_ip: client_ip.clone(),
+                client_ua: client_ua.clone(),
             };
             // 收尾帧特征取 Chat 的：客户端读到 `data: [DONE]` 就停是常态写法，
             // 那时连接会被立刻关掉、`Drop` 不会被拉到 EOF（见 `RecordingStream`）
@@ -306,6 +321,8 @@ pub async fn chat_completions(
                     is_test: false,
                     // 来源客户端：入口判好带进来
                     client: client.clone(),
+                    client_ip: client_ip.clone(),
+                    client_ua: client_ua.clone(),
                 },
                 None,
             );
@@ -340,6 +357,8 @@ pub async fn chat_completions(
                     is_test: false,
                     // 来源客户端：入口判好带进来
                     client: client.clone(),
+                    client_ip: client_ip.clone(),
+                    client_ua: client_ua.clone(),
                 },
                 Some(message),
             );

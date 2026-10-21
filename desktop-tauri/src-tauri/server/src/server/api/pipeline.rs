@@ -343,6 +343,37 @@ pub fn user_agent_of(headers: &axum::http::HeaderMap) -> String {
         .to_string()
 }
 
+/// 原始 UA 的入库上限（字符数）。
+///
+/// ── 为什么要有上限 ──────────────────────────────────────────
+/// UA 是**客户端完全可控**的头，正常值 50~200 字符，但没有任何约束阻止
+/// 有人发一个 1MB 的 UA 过来。请求日志是「全量保留」的（见请求日志页的副标题），
+/// 一条撑到几 MB 的行会被永久留在库里，而且每一屏列表都要把它读出来 ——
+/// 那是纯负担，没有任何排障价值（真正要看的是前 200 字符里的产品名与版本）。
+///
+/// 200 的依据：主流客户端 UA 的**产品段**都在前 200 字符内
+/// （`opencode/latest/2.1.0/cli`、Chrome 的整串约 120 字符、
+/// `codex_cli_rs/0.20.0 (Darwin; arm64) …` 约 90 字符）。超出部分
+/// 通常已经是无意义的填充。
+///
+/// 与 `server::http::client_user_agent` 的 200 是**同一个数**，那处是安全事件
+/// 日志用、这里是请求日志用 —— 两处的取值面一样（都是下游 UA），用同一个
+/// 上限才不会在排查同一个客户端时看到两种长度。
+pub const REQUEST_UA_MAX_CHARS: usize = 200;
+
+/// 截断到 [`REQUEST_UA_MAX_CHARS`]，空值给空串。
+///
+/// 按**字符**而不是字节截断：UA 允许非 ASCII（少见但合法），按字节切会切出
+/// 半个 UTF-8 字符。这里不加省略号 —— 存进去的是事实快照，不是展示文案，
+/// 展示层要缩可以自己缩。
+pub fn truncate_ua(text: &str) -> String {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    trimmed.chars().take(REQUEST_UA_MAX_CHARS).collect()
+}
+
 // ─── 请求记账（请求统计的唯一写入点）────────────────────────
 
 /// 一条请求的收尾上下文：流式分支要把它交给响应流，等流真的结束时再记账。
@@ -397,6 +428,13 @@ pub struct RecordContext {
     /// 见 `request_stats::RequestEntry::client`）。空串 = 没采集到 UA
     /// （模型测试、请求体解析都失败的早失败路径）。
     pub client: String,
+    /// **请求来源 IP**（schema v17，见 `request_stats::RequestEntry::client_ip`）。
+    /// 空串 = 没有下游连接信息（面板内部发起的助手 / 模型测试）。
+    pub client_ip: String,
+    /// **下游原始 User-Agent**（schema v17，见
+    /// `request_stats::RequestEntry::client_ua`）。空串 = 请求没带 UA。
+    /// 已按 [`REQUEST_UA_MAX_CHARS`] 截断。
+    pub client_ua: String,
 }
 
 /// 把原始字节变成可入库的正文文本（请求侧 / 响应侧共用）。
@@ -468,6 +506,7 @@ pub fn capture_raw_json<T: serde::Serialize>(value: &T) -> Option<String> {
 /// `client` 由调用方从请求头判好带入（`core::client::classify`）：早失败
 /// 恰恰最需要知道「是谁发来的」（客户端配错模型就是典型场景）；拿不到
 /// headers 的路径传空串（见 `RequestEntry::client`）。
+#[allow(clippy::too_many_arguments)]
 pub fn record_early_failure(
     state: &ServerState,
     started_at: i64,
@@ -476,6 +515,44 @@ pub fn record_early_failure(
     client: &str,
     key_id: &str,
     key_name: &str,
+    error: &GatewayError,
+) {
+    // 早失败没有下游来源信息可带：这些 handler 在解析请求体之前/之中就返回了，
+    // 调用方手里只有 headers（UA 有、连接地址没有 —— ConnectInfo 要显式提取）。
+    // 传空串而不是编一个值：空串的语义是「没有记录」，与「来自某处」必须能区分。
+    // 想要 IP 的早失败路径（chat / protocol 的 body 非法）由调用方用
+    // `record_early_failure_with_source` 带上来源；不带的路径如实留空。
+    record_early_failure_with_source(
+        state,
+        started_at,
+        model,
+        client_reasoning,
+        client,
+        key_id,
+        key_name,
+        "",
+        "",
+        error,
+    );
+}
+
+/// [`record_early_failure`] 的带来源版本：早失败同样记下 IP 与 UA。
+///
+/// ── 为什么早失败**更**需要来源 ──────────────────────────────
+/// 「谁在发非法请求」正是排障的第一问：客户端配错模型、脚本拼错 body、
+/// 或者有人在扫接口 —— 这三件事的处置方式完全不同，而唯一的区分线索就是
+/// 来源与 UA。正常请求反而可以从账号侧反推。
+#[allow(clippy::too_many_arguments)]
+pub fn record_early_failure_with_source(
+    state: &ServerState,
+    started_at: i64,
+    model: &str,
+    client_reasoning: &str,
+    client: &str,
+    key_id: &str,
+    key_name: &str,
+    client_ip: &str,
+    client_ua: &str,
     error: &GatewayError,
 ) {
     let telemetry = Arc::new(RequestTelemetry::new());
@@ -500,6 +577,8 @@ pub fn record_early_failure(
         // 早失败路径只有真实流量会走（模型测试自己那条失败在 handler 里收尾）
         is_test: false,
         client: client.to_string(),
+        client_ip: client_ip.to_string(),
+        client_ua: client_ua.to_string(),
     };
     record_entry(&context, Some(error.message.clone()));
 }
@@ -666,6 +745,10 @@ pub fn record_entry(context: &RecordContext, fallback_error: Option<String>) {
     // 空串 = 免鉴权 / 环境变量 Key / 助手 / 模型测试（见 `RequestEntry::key_id`）
     entry.key_id = snapshot.key_id;
     entry.key_name = snapshot.key_name;
+    // 来源 IP / 原始 UA（schema v17）：入口判好带入，这里只搬运 ——
+    // 存储层不认识 header，也不该在这里重新解析一遍
+    entry.client_ip = context.client_ip.clone();
+    entry.client_ua = context.client_ua.clone();
     entry.error = error;
     entry.prompt_tokens = snapshot.prompt_tokens;
     entry.completion_tokens = snapshot.completion_tokens;
@@ -1277,6 +1360,9 @@ mod tests {
             is_test: false,
             // 客户端不参与本用例的断言，给空串（无 UA 的形态）
             client: String::new(),
+            // 来源 IP / UA 同样不参与断言：空串 = 没有记录（面板内部发起的形态）
+            client_ip: String::new(),
+            client_ua: String::new(),
             status: 200,
             raw_request: None,
             raw_response: None,

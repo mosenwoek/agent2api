@@ -334,6 +334,28 @@ pub struct RequestEntry {
     /// 命中 Key 的展示名快照（与 `key_id` 同源同刻；空串 = 同上）
     #[serde(rename = "keyName", default)]
     pub key_name: String,
+    /// **请求来源 IP**（schema v17；空串 = 没有记录）。
+    ///
+    /// 取值由入口判好带入：优先 `X-Forwarded-For` 最左一项，其次 `X-Real-IP`，
+    /// 都没有时退回对端地址（见 `server::http::client_ip` 的说明）——
+    /// 反代部署下那才是发起方，而不是 nginx / 容器网关。
+    ///
+    /// 与 `client` 的区别：`client` 回答「哪家客户端」，本字段回答「从哪来」。
+    /// 排障时（谁在刷、某个 Key 是不是泄露了）看的就是这一列。
+    ///
+    /// 空串的成因：v17 之前的旧行、以及面板内部发起的 AI 助手 / 模型测试
+    /// （没有下游连接地址）。按「不猜值」的纪律不与 `-` 之类的占位混同。
+    #[serde(rename = "clientIp", default)]
+    pub client_ip: String,
+    /// **下游请求的原始 User-Agent**（schema v17；空串 = 请求没带 UA）。
+    ///
+    /// 与 `client` 的关系：`client` 是 classify 出的**归类**（有损），本字段是
+    /// **原值**（无损）。请求日志的客户端列优先显示归类，把本字段挂在悬停
+    /// 提示里 —— 归类回答「是谁」，原始值回答「具体什么版本 / 是不是脚本」。
+    ///
+    /// 超长值由采集侧截断（`REQUEST_UA_MAX_CHARS`），存储层不再二次处理。
+    #[serde(rename = "clientUa", default)]
+    pub client_ua: String,
 }
 
 /// 一个被命中的敏感词及其次数（存储契约）。
@@ -508,6 +530,12 @@ pub struct NewRequestEntry {
     pub key_id: String,
     /// 命中 Key 的展示名快照（与 `key_id` 同源同刻）
     pub key_name: String,
+    /// 请求来源 IP（schema v17，见 `RequestEntry::client_ip`；空串 = 没有记录）。
+    /// 同样是「有采集才有值」：入口拿到连接信息才填。
+    pub client_ip: String,
+    /// 下游请求的原始 User-Agent（schema v17，见 `RequestEntry::client_ua`；
+    /// 空串 = 请求没带 UA）。已按采集侧上限截断。
+    pub client_ua: String,
 }
 
 impl NewRequestEntry {
@@ -551,6 +579,10 @@ impl NewRequestEntry {
             // `RequestEntry::key_id` 的四种空串成因）
             key_id: String::new(),
             key_name: String::new(),
+            // 来源 IP / 原始 UA 同样「有采集才有值」：入口取到连接信息与 UA
+            // 才填（见 `RequestEntry::client_ip` 的空串成因）
+            client_ip: String::new(),
+            client_ua: String::new(),
         }
     }
 
@@ -671,6 +703,12 @@ impl NewRequestEntry {
             // 任何推导（不认识配置，也不该在这里回查）
             key_id: self.key_id.trim().to_string(),
             key_name: self.key_name.trim().to_string(),
+            // 来源 IP / 原始 UA 同样原样透传（trim 的理由与 provider 相同）：
+            // 判定与截断都在入口做（见 `RequestEntry::client_ip` /
+            // `RequestEntry::client_ua`），存储层不重判 —— 两处各截一遍只会
+            // 在边界上给出不同的长度
+            client_ip: self.client_ip.trim().to_string(),
+            client_ua: self.client_ua.trim().to_string(),
         }
     }
 }

@@ -234,6 +234,10 @@ pub async fn chat(State(state): State<ServerState>, body: Bytes) -> Response {
         // 助手是面板内部发起的，没有网关 Key 身份（key_id / key_name 空串）
         "",
         "",
+        // 也没有下游来源：面板自己发起的请求没有客户端 IP / UA
+        // （见 `RequestEntry::client_ip` 的空串成因）
+        "",
+        "",
         true,
     );
     if let Some(token) = cancellation::register(&telemetry_id) {
@@ -277,6 +281,9 @@ pub async fn chat(State(state): State<ServerState>, body: Bytes) -> Response {
                 raw_response: None,
                 is_test: true,
                 client: String::new(),
+                // 面板内部发起的助手没有下游来源
+                client_ip: String::new(),
+                client_ua: String::new(),
             };
             // 记账移交给响应流（它与流的生命周期同长）；守卫不再兜底
             guard.handoff();
@@ -307,6 +314,9 @@ pub async fn chat(State(state): State<ServerState>, body: Bytes) -> Response {
                     raw_response,
                     is_test: true,
                     client: String::new(),
+                    // 面板内部发起的助手没有下游来源
+                    client_ip: String::new(),
+                    client_ua: String::new(),
                 },
                 None,
             );
@@ -329,6 +339,9 @@ pub async fn chat(State(state): State<ServerState>, body: Bytes) -> Response {
                     raw_response: None,
                     is_test: true,
                     client: String::new(),
+                    // 面板内部发起的助手没有下游来源
+                    client_ip: String::new(),
+                    client_ua: String::new(),
                 },
                 Some(message.clone()),
             );

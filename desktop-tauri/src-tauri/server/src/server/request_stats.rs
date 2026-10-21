@@ -436,6 +436,11 @@ impl RequestStats {
     ///
     /// `key_id` / `key_name`（schema v16）同一理由：命中的那把 Key 在入口
     /// 鉴权时就定了，进行中行也该带上 —— 等收尾再补会让 Key 列在转发期间空一格。
+    ///
+    /// `client_ip` / `client_ua`（schema v17）同一理由：来源地址与 UA 在入口
+    /// 解析请求头那一刻就定稿了，进行中行也带着 —— 正在被刷流量时，
+    /// 「这条在跑的请求是谁发来的」是列表里最该立刻看到的一列。
+    #[allow(clippy::too_many_arguments)]
     pub fn record_started(
         &self,
         id: &str,
@@ -446,6 +451,8 @@ impl RequestStats {
         client: &str,
         key_id: &str,
         key_name: &str,
+        client_ip: &str,
+        client_ua: &str,
         is_test: bool,
     ) {
         if id.is_empty() {
@@ -464,6 +471,8 @@ impl RequestStats {
                 client,
                 key_id,
                 key_name,
+                client_ip,
+                client_ua,
                 is_test,
             )?;
             // 陈旧清理与插入同事务：僵尸行的判定时点与本次开始时点一致，

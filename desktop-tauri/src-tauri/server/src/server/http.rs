@@ -883,9 +883,30 @@ fn client_user_agent(headers: &axum::http::HeaderMap) -> String {
 /// 保留的是原始来源。完全裸暴露的场景下，日志里的 IP 只能当线索看，
 /// 不能当证据。
 fn client_ip(request: &Request) -> String {
+    client_ip_from(
+        request.headers(),
+        request
+            .extensions()
+            .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+            .map(|addr| addr.0),
+    )
+}
+
+/// [`client_ip`] 的**可复用核心**：只有 headers + 对端地址两个输入。
+///
+/// ── 为什么要把这段拆出来 ────────────────────────────────────
+/// 两处都要判来源，但手上的东西不同：
+///   · 鉴权中间件（本文件）手里是完整的 `Request`，对端地址在扩展里；
+///   · 转发 handler（`api::chat` / `api::protocol`）用 `ConnectInfo` 提取器
+///     单独拿到地址，而 `headers` 会被 move 进转发层 —— 判来源必须在那之前。
+/// 若各写一份解析，早晚会漂成「中间件记 nginx 地址、handler 记真实 IP」这种
+/// 最难解释的不一致（同一台机器两种读数）。判定规则只留这一份。
+pub fn client_ip_from(
+    headers: &axum::http::HeaderMap,
+    peer: Option<std::net::SocketAddr>,
+) -> String {
     // 反代透传的头：优先 X-Forwarded-For，其次 X-Real-IP（nginx 的 $remote_addr）
-    if let Some(forwarded) = request
-        .headers()
+    if let Some(forwarded) = headers
         .get("x-forwarded-for")
         .and_then(|value| value.to_str().ok())
     {
@@ -894,8 +915,7 @@ fn client_ip(request: &Request) -> String {
             return first.to_string();
         }
     }
-    if let Some(real_ip) = request
-        .headers()
+    if let Some(real_ip) = headers
         .get("x-real-ip")
         .and_then(|value| value.to_str().ok())
     {
@@ -905,10 +925,7 @@ fn client_ip(request: &Request) -> String {
         }
     }
     // 没有反代头：退回到对端地址（裸机 / 直连部署时这就是真实来源）
-    request
-        .extensions()
-        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-        .map(|addr| addr.0.ip().to_string())
+    peer.map(|addr| addr.ip().to_string())
         .unwrap_or_else(|| "-".to_string())
 }
 

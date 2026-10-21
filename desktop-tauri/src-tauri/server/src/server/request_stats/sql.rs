@@ -72,7 +72,7 @@ const REQUEST_COLUMNS: &str = "id, ts, model, account_id, account_name, status, 
      first_response_ms, attempts, error, prompt_tokens, completion_tokens, total_tokens, \
      cache_read_tokens, provider, client_model, upstream_model, attempt_details, sensitive_hits, \
      client_reasoning, upstream_reasoning, phase, phase_started_at, is_test, route, client, \
-     key_id, key_name";
+     key_id, key_name, client_ip, client_ua";
 
 /// 报表窄列查询的列顺序 —— **与 `db::schema` 的 `idx_requests_summary` 列序一致**
 /// （索引是 `ts, is_test` 前缀 + 这里的后 5 列），改任一侧都要回来对一眼。
@@ -107,14 +107,18 @@ const SUMMARY_COLUMNS: &str =
 /// 末尾两个 JSON 列走 [`decode_json_list`]：坏值退化成空表而不是让整条明细读不出来
 /// （理由见那个函数）。
 fn decode_request(row: &rusqlite::Row<'_>) -> rusqlite::Result<RequestEntry> {
-    let attempt_details: String = row.get(17)?;
-    let sensitive_hits: String = row.get(18)?;
+    // 全是「后来加的可空/带默认列」统一走 `text_at` 兜底：手工 ALTER 加列
+    // （不带 DEFAULT）的库里这些列会是 NULL，而 `row.get::<String>` 遇到 NULL
+    // 直接 Err —— 一个 NULL 就能让整页查询失败并被降级成「成功但为空」。
+    // 空串与 NULL 在这里语义相同（都是「没有记录」），收敛掉即可。
+    let attempt_details = text_at(row, 17)?;
+    let sensitive_hits = text_at(row, 18)?;
     Ok(RequestEntry {
-        id: row.get(0)?,
+        id: text_at(row, 0)?,
         ts: row.get(1)?,
-        model: row.get(2)?,
-        account_id: row.get(3)?,
-        account_name: row.get(4)?,
+        model: text_at(row, 2)?,
+        account_id: text_at(row, 3)?,
+        account_name: text_at(row, 4)?,
         status: row.get(5)?,
         duration_ms: row.get(6)?,
         first_response_ms: row.get(7)?,
@@ -124,18 +128,18 @@ fn decode_request(row: &rusqlite::Row<'_>) -> rusqlite::Result<RequestEntry> {
         completion_tokens: row.get(11)?,
         total_tokens: row.get(12)?,
         cache_read_tokens: row.get(13)?,
-        provider: row.get(14)?,
-        client_model: row.get(15)?,
-        upstream_model: row.get(16)?,
+        provider: text_at(row, 14)?,
+        client_model: text_at(row, 15)?,
+        upstream_model: text_at(row, 16)?,
         attempt_details: decode_json_list::<AttemptDetail>(&attempt_details),
         sensitive_hits: decode_json_list::<SensitiveHit>(&sensitive_hits),
         // 末尾两列是 schema v5 加的（顺序与 REQUEST_COLUMNS 一致）；
         // 旧行的 DEFAULT '' 原样读出，前端按空串处理
-        client_reasoning: row.get(19)?,
-        upstream_reasoning: row.get(20)?,
+        client_reasoning: text_at(row, 19)?,
+        upstream_reasoning: text_at(row, 20)?,
         // 末尾两列是 schema v6 加的（在途阶段与阶段起点）；不在途的行/旧行
         // 读出来是 '' 与 NULL —— 与「不在途」在写入侧收敛成同一组值
-        phase: row.get(21)?,
+        phase: text_at(row, 21)?,
         phase_started_at: row.get(22)?,
         // 末列是 schema v7 加的（测试来源）；旧行 DEFAULT 0 → false（真实流量）。
         // SQLite 没有布尔类型，按 INTEGER 读再判非零 —— 不依赖驱动对 bool 的
@@ -150,14 +154,35 @@ fn decode_request(row: &rusqlite::Row<'_>) -> rusqlite::Result<RequestEntry> {
             .and_then(|text| serde_json::from_str(&text).ok())
             .unwrap_or(Value::Null),
         // 末列是 schema v12 加的（请求来源客户端）；旧行的 DEFAULT '' 原样
-        // 读出 —— 空串 = 没有记录（前端显示占位符），与无 UA 的请求同一形态
-        client: row.get(25)?,
+        // 读出 —— 空串 = 没有记录（前端显示占位符），与无 UA 的请求同一形态。
+        // 同样走 text_at：手工加的可空列会是 NULL
+        client: text_at(row, 25)?,
         // 末两列是 schema v16 加的（网关 Key 身份）；旧行 DEFAULT '' 原样读出
         // —— 空串 = 没有可归属的 Key（v16 之前的历史无从回填，见 schema 的
-        // v16 段）
-        key_id: row.get(26)?,
-        key_name: row.get(27)?,
+        // v16 段）。三种成因（没有 Key / 旧行 / 手工加的可空列）都收敛成空串
+        key_id: text_at(row, 26)?,
+        key_name: text_at(row, 27)?,
+        // 末两列是 schema v17 加的（来源 IP / 原始 UA）；空串 = 没有记录
+        // （v17 之前的行无从回溯）。为什么用 text_at 见函数头那段说明
+        client_ip: text_at(row, 28)?,
+        client_ua: text_at(row, 29)?,
     })
+}
+
+/// 读一列 TEXT，NULL 与空串都收敛成 `String::new()`。
+///
+/// ── 为什么不是直接 `row.get::<String>(n)?` ────────────────────
+/// 那个写法在列值为 NULL 时返回 Err。`select_page_desc` 里每个 `?` 都会把
+/// 单行的读失败升级成**整个查询**失败，而 `query_requests` 又会把查询失败
+/// 降级成 `{entries: [], total: 0}` —— 用户看到的是「请求日志全空了」，
+/// 没有任何报错提示（错误只在容器控制台打一行）。
+///
+/// 这件事真发生过：给 requests 加 `key_id` 两列时用了不带
+/// `NOT NULL DEFAULT ''` 的 `ALTER TABLE`，1600 多条存量行全是 NULL，
+/// 列表当场全空。DDL 的 DEFAULT 只在**加列那一刻**生效，之后被写回 NULL
+/// 的行（或别的工具加的可空列）不受它保护 —— 所以读侧必须自己容错。
+fn text_at(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<String> {
+    Ok(row.get::<_, Option<String>>(index)?.unwrap_or_default())
 }
 
 /// JSON 数组文本 → `Vec<T>`（明细行的两个附属列）。解析失败或内容不是数组时
@@ -612,6 +637,8 @@ pub(super) fn insert_started_request(
     client: &str,
     key_id: &str,
     key_name: &str,
+    client_ip: &str,
+    client_ua: &str,
     is_test: bool,
 ) -> rusqlite::Result<bool> {
     let existing: i64 = conn.query_row(
@@ -628,11 +655,25 @@ pub(super) fn insert_started_request(
     // 那一段的测试行看起来与真实流量一样
     // client（来源客户端）同一理由：它在入口解析请求头那一刻就定稿了，
     // 进行中行也应带上 —— 等收尾再补会让列表里「客户端」列在转发期间空一格
+    // client_ip / client_ua（schema v17）同理：连接来源与 UA 在入口就已定稿，
+    // 进行中行也带着 —— 「这条正在跑的请求是谁发来的」正是刷流量时最想立刻看到的
     conn.execute(
         "INSERT INTO requests (id, ts, model, client_model, client_reasoning, status, \
-         phase, phase_started_at, is_test, client, key_id, key_name) \
-         VALUES (?1, ?2, ?3, ?4, ?5, 0, 'connecting', ?2, ?6, ?7, ?8, ?9)",
-        params![id, ts, model, client_model, client_reasoning, is_test as i64, client, key_id, key_name],
+         phase, phase_started_at, is_test, client, key_id, key_name, client_ip, client_ua) \
+         VALUES (?1, ?2, ?3, ?4, ?5, 0, 'connecting', ?2, ?6, ?7, ?8, ?9, ?10, ?11)",
+        params![
+            id,
+            ts,
+            model,
+            client_model,
+            client_reasoning,
+            is_test as i64,
+            client,
+            key_id,
+            key_name,
+            client_ip,
+            client_ua
+        ],
     )?;
     Ok(true)
 }
@@ -763,7 +804,8 @@ pub(super) fn update_running_request(
          completion_tokens = ?12, total_tokens = ?13, cache_read_tokens = ?14, provider = ?15, \
          client_model = ?16, upstream_model = ?17, attempt_details = ?18, sensitive_hits = ?19, \
          client_reasoning = ?20, upstream_reasoning = ?21, phase = '', phase_started_at = NULL, \
-         is_test = ?22, route = ?23, client = ?24, key_id = ?25, key_name = ?26 \
+         is_test = ?22, route = ?23, client = ?24, key_id = ?25, key_name = ?26, \
+         client_ip = ?27, client_ua = ?28 \
          WHERE id = ?1 AND status = 0",
         params![
             entry.id,
@@ -797,6 +839,10 @@ pub(super) fn update_running_request(
             // Key 身份同一口径：首发时若没有进行中行就没写，收尾这次补上
             entry.key_id,
             entry.key_name,
+            // 来源 IP / UA 同一口径：首发已写过一次（进行中行），收尾再写一次
+            // 保证「有进行中行」与「直接插入」两条路径落库的值同源
+            entry.client_ip,
+            entry.client_ua,
         ],
     )
 }
@@ -815,9 +861,9 @@ pub(super) fn insert_request(conn: &Connection, entry: &RequestEntry) -> rusqlit
          first_response_ms, attempts, error, prompt_tokens, completion_tokens, total_tokens, \
          cache_read_tokens, provider, client_model, upstream_model, attempt_details, \
          sensitive_hits, client_reasoning, upstream_reasoning, is_test, route, client, \
-         key_id, key_name) \
+         key_id, key_name, client_ip, client_ua) \
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, \
-         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)",
+         ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28)",
         params![
             entry.id,
             entry.ts,
@@ -845,6 +891,8 @@ pub(super) fn insert_request(conn: &Connection, entry: &RequestEntry) -> rusqlit
             entry.client,
             entry.key_id,
             entry.key_name,
+            entry.client_ip,
+            entry.client_ua,
         ],
     )?;
     Ok(())

@@ -331,7 +331,33 @@ pub fn is_reserved(key: &str) -> bool {
 ///
 /// **历史数据不回填**：v16 之前的明细根本没记过 Key 身份，无从推断 ——
 /// 按「不猜值」的既有纪律，旧行一律落在空串（未知 Key）组。
-pub const SCHEMA_VERSION: i64 = 16;
+///
+/// ── 版本 17：requests 补来源 IP 与原始 UA（`client_ip` / `client_ua`）─────
+/// 见 [`V17_SCHEMA`]。明细记下「这次请求是从哪个地址、哪个 User-Agent 发来的」，
+/// 供请求日志的来源列与排障读。
+///
+/// ── 为什么 UA 要单独存一列，而不是只留 v12 的 `client` 归类 ───────────
+/// `client` 是 `core::client::classify` 的**归类结果**（Codex / Claude Code /
+/// other…），它回答「是哪家客户端」，但不回答「具体是哪个版本 / 是不是脚本」。
+/// 排障时这两件事完全不同：`other` 可能是某个人写的小脚本，也可能是新出的
+/// 客户端；只看归类无法区分。原始 UA 才是那层细节。
+///
+/// 存**原始 UA**（而不是再解析一次）的理由与 `client` 那列相反：归类是有损的，
+/// 而原始值一旦丢了就找不回来。上限由采集侧截断（[`REQUEST_UA_MAX_CHARS`]），
+/// 避免超长 UA 把明细行撑大。
+///
+/// ── 为什么 IP 存文本而不是整数 ────────────────────────────────
+/// IPv4 能压成一个 i64，但 IPv6 不能（128 位），而本字段两者都要能存。
+/// 双栈部署下写两条不同的编码路径只为了省几个字节，换来的是读侧要判断
+/// 「这个数是 v4 还是 v6」—— 不值得。文本还能原样显示、原样写进导出文件。
+///
+/// ── 历史数据不回填 ──────────────────────────────────────────
+/// 与 v16 同一纪律：v17 之前的明细没记过来源，旧行一律落在空串（未知来源）。
+/// 本函数据以网关收到的请求为准，事后无从推断。
+///
+/// 注意 [`REQUEST_UA_MAX_CHARS`] 是**采集侧**的截断上限（本模块不引用它，
+/// 只在此处交叉引用，避免两处各写一个数字飘开）。
+pub const SCHEMA_VERSION: i64 = 17;
 
 /// 版本 1 的全部表与索引：改造前所有 JSON / JSONL 文件的对应形态。
 ///
@@ -847,6 +873,24 @@ ALTER TABLE requests ADD COLUMN key_name TEXT NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS idx_requests_key_ts ON requests(key_id, ts);
 ";
 
+/// 版本 17：requests 补来源 IP 与原始 UA 两列（schema v17）。
+///
+/// 与 v12 / v16 同一形态（既有表加列，幂等靠版本号）。来历、为什么不压成整数、
+/// 为什么 UA 要单独存，见 [`SCHEMA_VERSION`] 的 v17 段。
+///
+/// `NOT NULL DEFAULT ''` 是**必须的**，不是顺手抄上一版：
+/// 读取侧把这两列读成 `String`（见 `request_stats::sql::decode_request`），
+/// 而 `row.get::<String>` 遇到 NULL 会直接报错 —— 一旦有 NULL 行，
+/// `select_page_desc` 里那个 `?` 会让**整页**查询失败，再被
+/// `query_requests` 的 `unwrap_or` 降级成「成功但为空」，界面上表现为
+/// 请求日志突然全空、且没有任何报错。加列带 DEFAULT 让存量行就地补上空串，
+/// 从根上避免那类静默全空。
+const V17_SCHEMA: &str = "
+-- ── requests 补来源 IP 与原始 UA（schema v17）─────────────────
+ALTER TABLE requests ADD COLUMN client_ip TEXT NOT NULL DEFAULT '';
+ALTER TABLE requests ADD COLUMN client_ua TEXT NOT NULL DEFAULT '';
+";
+
 /// 把库升到 [`SCHEMA_VERSION`]（幂等：已是最新版时什么都不做）。
 ///
 /// **库版本高于本程序时返回 `Err` 拒绝打开**（v14 起有意反转的一条既有决定，
@@ -1007,6 +1051,9 @@ fn apply_version(
         // v16：requests 补网关 Key 身份两列 + 区间索引（见 V16_SCHEMA 与
         // SCHEMA_VERSION 的 v16 段）。
         16 => conn.execute_batch(V16_SCHEMA),
+        // v17：requests 补来源 IP 与原始 UA 两列（见 V17_SCHEMA 与
+        // SCHEMA_VERSION 的 v17 段）。
+        17 => conn.execute_batch(V17_SCHEMA),
         _ => Ok(()),
     }
 }
