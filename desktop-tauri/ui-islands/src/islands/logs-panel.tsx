@@ -57,10 +57,20 @@ import { t } from '../i18n'
 /**
  * 一条系统事件（GET /api/logs 的 entries[]，对应后端 logs_store::LogEntry）。
  * data 是附加数据：429 换号带 from/to、模型目录刷新带 model、限流带 resetAtText。
+ * 安全事件（拒绝未授权的请求）另带 ip / ua —— 溯源要靠它们，光看路径
+ * 判断不出「谁在扫」。
  */
 type LogEntry = {
   id?: number; ts?: number; level?: string; category?: string; message?: string
-  data?: { from?: string; to?: string; model?: string; resetAtText?: string; status?: string | number } | null
+  data?: {
+    from?: string; to?: string; model?: string; resetAtText?: string; status?: string | number
+    /** 客户端 IP（反代透传时取 X-Forwarded-For 最左项，否则取对端地址） */
+    ip?: string
+    /** 客户端 User-Agent（截断到 200 字符） */
+    ua?: string
+    /** 被拒请求的方法与路径 */
+    method?: string; path?: string
+  } | null
 }
 
 /** GET /api/logs 的响应：后端另附 levels / categories / max 三个字典字段 */
@@ -333,7 +343,10 @@ function formatLogTime(ts?: number): string {
 
 /** 附加数据渲染成简短后缀：429 切换显示「账号 A → 账号 B · 恢复时间」。
  *  「模型」「恢复」是界面文案走 t()；模型名 / 恢复时间 / 状态码是后端数据，原样带入。
- *  `HTTP 404` 整段没有中文（协议名 + 数字），不包 t()。 */
+ *  `HTTP 404` 整段没有中文（协议名 + 数字），不包 t()。
+ *
+ *  安全事件额外带来源：IP 与 UA 是溯源的唯一依据（「谁在扫」），拼在
+ *  最后 —— 前面是事件语义（换了哪个模型 / 恢复了多久），后面是现场。 */
 function extraText(entry: LogEntry): string {
   const data = entry.data
   if (!data) return ''
@@ -342,6 +355,8 @@ function extraText(entry: LogEntry): string {
   if (data.model) parts.push(t('模型 {model}', { model: data.model }))
   if (data.resetAtText) parts.push(t('{time} 恢复', { time: data.resetAtText }))
   else if (data.status && !data.from && !data.to) parts.push(`HTTP ${data.status}`)
+  if (data.ip) parts.push(data.ip)
+  if (data.ua) parts.push(data.ua)
   return parts.length ? parts.join(' · ') : ''
 }
 

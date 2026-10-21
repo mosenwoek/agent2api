@@ -850,6 +850,68 @@ fn attach_cors(headers: &mut axum::http::HeaderMap) {
     }
 }
 
+/// 取日志用的客户端 UA（截断到 200 字符，避免超长 UA 撑爆日志行）。
+///
+/// 找不到时返回空串（前端据此不渲染 UA 片段）。
+fn client_user_agent(headers: &axum::http::HeaderMap) -> String {
+    headers
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.trim())
+        .filter(|value| !value.is_empty())
+        .map(|value| value.chars().take(200).collect())
+        .unwrap_or_default()
+}
+
+/// 取真实客户端 IP。
+///
+/// ── 为什么不能直接用对端地址 ────────────────────────────────
+/// 容器 / 反代部署时 axum 看到的是**最后一跳**的地址（Docker 网关
+/// `172.17.x.1` 或 nginx 的本机地址），不是发起扫描的那个人。日志里
+/// 要能溯源，就必须优先采信反代透传的头。
+///
+/// ── 为什么取 XFF 的**最左**一项 ────────────────────────────
+/// `X-Forwarded-For: client, proxy1, proxy2` 里，越靠左越靠近原始客户端。
+/// 每一跳都会把自己的地址追加到**右侧**，所以最左边那一项是客户端自己
+/// 声明的源地址。取最右反而是最靠近服务端的那一跳（通常是 nginx 自己，
+/// 没有溯源价值）。
+///
+/// 安全说明：最左一项是**可以被客户端伪造**的 —— 直接对公网暴露、
+/// 前面没有可信反代时，攻击者可以随便写。这里仍然取它，因为本项目的
+/// 典型部署是「nginx 反代 → 容器」，nginx 会用 `proxy_set_header
+/// X-Forwarded-For $proxy_add_x_forwarded_for` 追加而不是覆盖，最左一项
+/// 保留的是原始来源。完全裸暴露的场景下，日志里的 IP 只能当线索看，
+/// 不能当证据。
+fn client_ip(request: &Request) -> String {
+    // 反代透传的头：优先 X-Forwarded-For，其次 X-Real-IP（nginx 的 $remote_addr）
+    if let Some(forwarded) = request
+        .headers()
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+    {
+        let first = forwarded.split(',').next().unwrap_or("").trim();
+        if !first.is_empty() {
+            return first.to_string();
+        }
+    }
+    if let Some(real_ip) = request
+        .headers()
+        .get("x-real-ip")
+        .and_then(|value| value.to_str().ok())
+    {
+        let trimmed = real_ip.trim();
+        if !trimmed.is_empty() {
+            return trimmed.to_string();
+        }
+    }
+    // 没有反代头：退回到对端地址（裸机 / 直连部署时这就是真实来源）
+    request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
+        .map(|addr| addr.0.ip().to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
 /// API Key 检查中间件，逻辑照抄 Node 版 checkApiKey：
 ///   - 未配置 key → 全部放行（网关只监听 127.0.0.1）
 ///   - 配置了 key → 请求头 `Authorization: Bearer <key>` 或 `x-api-key: <key>`
@@ -1015,7 +1077,34 @@ async fn require_api_key(mut request: Request, next: Next) -> Response {
     }
 
     let method = request.method().as_str().to_string();
-    logging::log("[Security]", &format!("❌ 拒绝未授权的请求: {method} {path}"));
+    // 拒绝未授权的请求要能溯源：光有 method + path 没法判断「谁在扫」。
+    //
+    // 落库时**只写一条**（`log_event` 一次成型）：`log()` 与 `log_event()`
+    // 各写一次会在面板里出现两行重复记录。控制台单独补一行（带来源与
+    // UA），因为 `log_event` 按设计不重复打印到控制台，而 `docker logs`
+    // 是排障时最直接的现场。
+    //
+    // IP / UA 放 `data` 而不是 message：面板日志页有专门的副行渲染
+    // 结构化字段（`extraText`），放那里不挤占主消息行；导出成 JSONL 时
+    // 也是结构化字段，便于后续按 IP 聚合。
+    let ip = client_ip(&request);
+    let ua = client_user_agent(request.headers());
+    let message = format!("❌ 拒绝未授权的请求: {method} {path}");
+    logging::console_line(
+        "[Security]",
+        &format!("{message}（来源 {ip}｜UA {ua}）"),
+    );
+    logging::log_event(
+        "error",
+        "config",
+        &message,
+        Some(json!({
+            "ip": ip,
+            "ua": ua,
+            "method": method,
+            "path": path,
+        })),
+    );
     errors::unauthorized_response()
 }
 
