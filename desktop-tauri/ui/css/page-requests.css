@@ -39,7 +39,7 @@
 .req-head {
   display: grid;
   grid-template-columns: var(--req-cols,
-    92px minmax(0, 1.1fr) 52px 96px minmax(0, 1.3fr) 110px 96px minmax(0, 1.6fr) minmax(0, 1.2fr) 60px);
+    92px minmax(0, 1.1fr) 52px 96px minmax(0, 1.3fr) 260px 96px minmax(0, 1.6fr) minmax(0, 1.2fr) 60px);
   gap: 12px;
   align-items: center;
   padding: 10px 14px;
@@ -305,26 +305,22 @@
   white-space: nowrap;
 }
 
-/* 客户端：产品名（Codex / Claude Code …），普通文本 + 尾部省略。
-   与提供商 / 账号同档字号，不用等宽（它不是标识符）。 */
+/* 请求UA / 来源IP（schema v17 之后这一列放两行）：
+   上行是原始 User-Agent，下行是来源 IP。
+   等宽字体给下行（IP 是标识符，`::` 与数字对齐才好认）；上行也用等宽 ——
+   UA 是一串带斜杠的标识符，等宽比比例字体好扫。
+   两行都可能被尾部省略 —— 完整值在悬停提示里（title 给的是原始 UA + IP）。 */
 .req-row .req-client {
   min-width: 0;
-  overflow: hidden;
-  color: var(--text-2);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
 }
 
-/* 无客户端记录（旧行 / 模型测试 / 请求未带 UA）：破折号，与 target 列的占位同一手法 */
-.req-row .req-client.is-empty { color: var(--text-3); }
-
-/* 来源 IP（schema v17）：等宽（它是标识符，v6 里的 `::` 与数字对齐才好认），
-   尾部省略交给 overflow —— 不手动截断，截过的 IP 会看起来像另一个地址。
-   字号比客户端列小一档：它是排障读数，不是日常浏览的主读数。 */
-.req-row .req-ip {
-  min-width: 0;
+.req-row .req-client-line {
   overflow: hidden;
+  max-width: 100%;
   color: var(--text-2);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -332,8 +328,13 @@
   white-space: nowrap;
 }
 
-/* 无来源记录（旧行 / 面板内部发起的请求）：破折号，与 client 列同一手法 */
-.req-row .req-ip.is-empty { color: var(--text-3); }
+.req-row .req-client-line.sub {
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+/* 无来源记录（旧行 / 面板内部发起的请求）：破折号，与 target 列的占位同一手法 */
+.req-row .req-client.is-empty { color: var(--text-3); }
 
 /* 上下名分行的形态（转发名 ≠ 请求名时，如映射 / 备援改写）：
    ⬆️ 上游实际收到的名字（主读数）在上，⬇️ 下游请求的名字（淡一档）在下 ——
@@ -437,7 +438,6 @@
   .req-head .req-retry { grid-row: 1; grid-column: 4 / 5; }
   .req-head .req-target,
   .req-head .req-client,
-  .req-head .req-ip,
   .req-head .req-dur,
   .req-head .req-usage,
   .req-head .req-error-cell { display: none; }
@@ -452,13 +452,10 @@
   .req-row .req-dur { grid-row: 2; grid-column: 3 / 5; }
   /* 第三行：用量整行铺开（两行读数不再被列宽挤省略） */
   .req-row .req-usage { grid-row: 3; grid-column: 1 / -1; }
-  /* 第四行：客户端（左，跨到详情按钮之前）+ 详情（贴右）。
-     客户端不挤进第二行 —— 那一行右侧已经给了用时，96px 装不下「GitHub Copilot」 */
+  /* 第四行：客户端 / 来源（左，跨到详情按钮之前）+ 详情（贴右）。
+     客户端不挤进第二行 —— 那一行右侧已经给了用时，96px 装不下两行读数 */
   .req-row .req-client { grid-row: 4; grid-column: 1 / 4; }
   .req-row .req-detail { grid-row: 4; grid-column: 4 / 5; justify-self: end; }
-  /* 第五行：来源 IP 整行铺开（窄窗口下它是排障读数，和客户端分两行放，
-     挤在同一行会把两边都压成省略号） */
-  .req-row .req-ip { grid-row: 5; grid-column: 1 / -1; }
   /* 「-」占位不再独占一行：窄窗口下空行比省略号更难解释 */
   .req-row .req-error-cell { display: none; }
   /* 详情列头在窄窗口下没有稳定的列位（位置随有没有错误而变），一并隐藏 */

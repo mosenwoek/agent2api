@@ -271,11 +271,19 @@ const COLUMNS: Column[] = [
   { key: 'retry', label: t('重试'), sel: '.req-retry', track: '52px' },
   { key: 'status', label: t('状态'), sel: '.req-status', track: '96px' },
   { key: 'model', label: t('模型'), sel: '.req-model', track: 'minmax(0, 1.3fr)' },
-  { key: 'client', label: t('客户端'), sel: '.req-client', track: '110px' },
-  // 「来源 IP」列（schema v17）：排障时「谁在打这个网关」的第一读数。
-  // 宽度比客户端列略宽（IPv6 最长 45 字符，但常见是 IPv4 的 15 字符左右）；
-  // 用 minmax(0, ...) 让它在窄屏下可以被挤压而不是撑破表格
-  { key: 'ip', label: t('来源 IP'), sel: '.req-ip', track: 'minmax(0, 0.9fr)' },
+  // 「客户端 / 来源」列：上行是原始 UA 里认出的产品名，下行是来源 IP。
+  // 宽度 150px —— UA 里的产品段（`opencode/latest/2.1.0/cli`、`claude-cli/1.2.3`）
+  // 通常在 30 字符内，加上 IP 那行（IPv4 15 字符），150px 能放下两者的常见形态；
+  // 超长的交给尾部省略 + 悬停看全文
+  // 「请求UA / 来源IP」列：上行是原始 User-Agent，下行是来源 IP。
+  //
+  // 宽度 260px：UA 全文（`opencode/latest/2.1.0/cli` 24 字符、
+  // `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/…` 100+ 字符）
+  // 放不全，但 260px 能容下常见的 CLI 形态（30~50 字符），超出部分尾部省略
+  // —— 完整值在悬停提示里。取 260 而不是更宽，是因为再宽就要挤模型列的
+  // 弹性空间（那一列才是日常注视的主读数）。
+  // 居中：两行都是标识符，左对齐时长短不齐会显得很乱
+  { key: 'client', label: t('请求UA/来源IP'), sel: '.req-client', track: '260px', align: 'center' },
   { key: 'dur', label: t('用时'), sel: '.req-dur', track: '96px', align: 'right' },
   { key: 'usage', label: t('用量'), sel: '.req-usage', track: 'minmax(0, 1.6fr)' },
   { key: 'error', label: t('错误'), sel: '.req-error-cell', track: 'minmax(0, 1.2fr)' },
@@ -486,9 +494,7 @@ function queryParams(): string {
   return params.toString()
 }
 
-/* ─── 单元格读数 ───────────────────────────── */
-
-/** 用时：秒以内给毫秒，分钟以上给分秒（与 OmniProxy 同一格式） */
+/* ─── 单元格读数 ───────────────────────────── *//** 用时：秒以内给毫秒，分钟以上给分秒（与 OmniProxy 同一格式） */
 function formatDuration(ms: unknown): string {
   const rounded = Math.round(Number(ms) || 0)
   if (rounded < 1000) return `${rounded}ms`
@@ -915,54 +921,26 @@ function requestCell(entry: RequestEntry, column: VisibleColumn): React.ReactNod
     }
 
     case 'client': {
-      // 后端存的是**归类结果**（Codex / ZCode / Claude Code / …，见 core::client），
-      // 空串 = 没有记录（旧行、模型测试、请求未带 UA）。产品名是标识符不翻译，
-      // 只有兜底类 `other` 翻成「其它」；空值给占位符而不是空格子。
-      //
-      // ── 原始 UA 挂在悬停提示里（schema v17）────────────────────
-      // 归类回答「哪家客户端」，原始 UA 回答「具体哪个版本 / 是不是脚本」——
-      // 后者太长（实测 40~200 字符），放进表格会把这一列撑爆，所以只做
-      // tooltip。两者都取不到时（`other` 且无原始 UA）才说「识别到 UA 但
-      // 不属于已知类型」；有原始 UA 就直接展示它，比那句推断更准确。
-      const value = String(entry.client ?? '').trim()
+      // 上行：原始 User-Agent（原样，不做产品名截取 —— 用户要看的是真值）
+      // 下行：来源 IP（schema v17）
+      // 悬停：完整 UA + 完整 IP（表格里超长会省略，悬停看全文）
       const ua = String(entry.clientUa ?? '').trim()
-      if (!value) {
+      const ip = String(entry.clientIp ?? '').trim()
+      if (!ua && !ip) {
         return (
           <span key={key} className={`${className} is-empty`}
-            title={ua
-              ? t('未识别出客户端类型，原始 User-Agent：{ua}', { ua })
-              : t('这条明细没有记录来源客户端（旧数据、模型测试，或请求未带 User-Agent）')}>—</span>
+            title={t('这条明细没有记录来源与 User-Agent（旧数据，或请求未带 UA）')}>—</span>
         )
       }
-      const label = value === 'other' ? t('其它') : value
-      // 有原始 UA 时优先展示它（`other` 的情形尤其需要）：那是排障时真正想看的
-      const title = ua
-        ? t('来源客户端：{client}｜原始 User-Agent：{ua}', { client: label, ua })
-        : value === 'other'
-          ? t('识别到 User-Agent，但不属于已知的客户端类型')
-          : t('来源客户端：{client}', { client: label })
+      // 悬停提示：把两个原值都完整给出来 —— 表格里是缩略，排障时看的是这里
+      const title = [
+        ua ? t('User-Agent：{ua}', { ua }) : t('请求未带 User-Agent'),
+        ip ? t('来源 IP：{ip}', { ip }) : t('没有记录来源 IP'),
+      ].join('\n')
       return (
         <span key={key} className={className} title={title}>
-          {label}
-        </span>
-      )
-    }
-
-    case 'ip': {
-      // 来源 IP（schema v17）：空串 = 没有记录（旧行 / 面板内部发起的请求）。
-      // 直接显示原值不做过长截断 —— IP 本身有上限（IPv6 45 字符），
-      // 而截断会让 `2001:db8::1` 与 `2001:db8::2` 看起来一样，那正是排障时
-      // 最不能接受的事。靠 CSS 的 overflow 处理溢出。
-      const value = String(entry.clientIp ?? '').trim()
-      if (!value) {
-        return (
-          <span key={key} className={`${className} is-empty`}
-            title={t('这条明细没有记录来源 IP（旧数据，或面板内部发起的请求）')}>—</span>
-        )
-      }
-      return (
-        <span key={key} className={className} title={t('请求来源 IP：{ip}', { ip: value })}>
-          {value}
+          <span className='req-client-line'>{ua || '—'}</span>
+          <span className='req-client-line sub'>{ip || '—'}</span>
         </span>
       )
     }
