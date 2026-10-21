@@ -271,17 +271,13 @@ const COLUMNS: Column[] = [
   { key: 'retry', label: t('重试'), sel: '.req-retry', track: '52px' },
   { key: 'status', label: t('状态'), sel: '.req-status', track: '96px' },
   { key: 'model', label: t('模型'), sel: '.req-model', track: 'minmax(0, 1.3fr)' },
-  // 「客户端 / 来源」列：上行是原始 UA 里认出的产品名，下行是来源 IP。
-  // 宽度 150px —— UA 里的产品段（`opencode/latest/2.1.0/cli`、`claude-cli/1.2.3`）
-  // 通常在 30 字符内，加上 IP 那行（IPv4 15 字符），150px 能放下两者的常见形态；
-  // 超长的交给尾部省略 + 悬停看全文
   // 「请求UA / 来源IP」列：上行是原始 User-Agent，下行是来源 IP。
   //
   // 宽度 260px：UA 全文（`opencode/latest/2.1.0/cli` 24 字符、
   // `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/…` 100+ 字符）
-  // 放不全，但 260px 能容下常见的 CLI 形态（30~50 字符），超出部分尾部省略
-  // —— 完整值在悬停提示里。取 260 而不是更宽，是因为再宽就要挤模型列的
-  // 弹性空间（那一列才是日常注视的主读数）。
+  // 放不全，但 260px 能容下常见的 CLI 形态（30~50 字符），超出部分尾部省略。
+  // 取 260 而不是更宽，是因为再宽就要挤模型列的弹性空间（那一列才是日常
+  // 注视的主读数）；列宽本身也可以在「列设置」里拖。
   // 居中：两行都是标识符，左对齐时长短不齐会显得很乱
   { key: 'client', label: t('请求UA/来源IP'), sel: '.req-client', track: '260px', align: 'center' },
   { key: 'dur', label: t('用时'), sel: '.req-dur', track: '96px', align: 'right' },
@@ -923,22 +919,18 @@ function requestCell(entry: RequestEntry, column: VisibleColumn): React.ReactNod
     case 'client': {
       // 上行：原始 User-Agent（原样，不做产品名截取 —— 用户要看的是真值）
       // 下行：来源 IP（schema v17）
-      // 悬停：完整 UA + 完整 IP（表格里超长会省略，悬停看全文）
+      //
+      // 不加悬停提示（title）：这两个值已经在格子里直接显示了，再把同一份内容
+      // 塞进 tooltip 是纯粹的重复。空值时也不加 —— 「—」本身已经说明没有记录。
       const ua = String(entry.clientUa ?? '').trim()
       const ip = String(entry.clientIp ?? '').trim()
       if (!ua && !ip) {
         return (
-          <span key={key} className={`${className} is-empty`}
-            title={t('这条明细没有记录来源与 User-Agent（旧数据，或请求未带 UA）')}>—</span>
+          <span key={key} className={`${className} is-empty`}>—</span>
         )
       }
-      // 悬停提示：把两个原值都完整给出来 —— 表格里是缩略，排障时看的是这里
-      const title = [
-        ua ? t('User-Agent：{ua}', { ua }) : t('请求未带 User-Agent'),
-        ip ? t('来源 IP：{ip}', { ip }) : t('没有记录来源 IP'),
-      ].join('\n')
       return (
-        <span key={key} className={className} title={title}>
+        <span key={key} className={className}>
           <span className='req-client-line'>{ua || '—'}</span>
           <span className='req-client-line sub'>{ip || '—'}</span>
         </span>
