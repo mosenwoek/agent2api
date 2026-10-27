@@ -35,7 +35,7 @@
 > [`superdady666/agent2api`](https://github.com/superdady666/agent2api)。
 >
 > 上面 README 里的 Docker 镜像名（`aimodcc/agent2api`）指向上游官方镜像；
-> 自建镜像请用 `nbmosen/agent2api`（本仓库的 `.github/workflows/docker.yml`
+> 自建镜像请用 `mosenwoek/agent2api`（本仓库的 `.github/workflows/docker.yml`
 > 在 main 分支推送时构建推送）。
 
 ---

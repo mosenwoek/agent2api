@@ -17,16 +17,16 @@
 
 services:
   agent2api:
-    # 个人 fork 自建镜像（nbmosen/agent2api）。
+    # 个人 fork 自建镜像（mosenwoek/agent2api）。
     # 与上游 aimodcc/agent2api 的差别：本 fork 的 main 分支会在日志页
     # 展示安全事件的来源 IP 与 UA（拒绝未授权的请求可溯源）。
     #
     # 拉不到镜像时的排查顺序：
     #   1. docker login（镜像若是公开的其实不需要，但 Docker Hub 限流时会）
-    #   2. docker pull nbmosen/agent2api:latest 看具体报错
+    #   2. docker pull mosenwoek/agent2api:latest 看具体报错
     #   3. 该仓库的镜像由 GitHub Actions 构建推送（.github/workflows/docker.yml），
     #      main 分支推送即产出 :latest 与 :dev
-    image: nbmosen/agent2api:latest
+    image: mosenwoek/agent2api:latest
     container_name: agent2api
     restart: unless-stopped
     ports:
